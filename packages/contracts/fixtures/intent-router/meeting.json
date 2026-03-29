@@ -1,0 +1,23 @@
+{
+  "fixtureId": "meeting_basic",
+  "description": "Meeting workflow should route directly when the command clearly asks for executive prep.",
+  "input": {
+    "commandId": "fixture_meeting_001",
+    "commandText": "Prepare me for tomorrow's strategy meeting with ByteDance leadership",
+    "submittedAt": "2026-03-29T21:43:00.000Z",
+    "policyMode": "balanced",
+    "locale": "zh-CN",
+    "timezone": "Asia/Shanghai"
+  },
+  "expectedRoute": {
+    "workflowType": "meeting",
+    "routeStatus": "routed",
+    "fallbackMode": "none",
+    "nextActionType": "send_to_planner",
+    "riskLevel": "medium",
+    "urgency": "high",
+    "approvalExpected": false,
+    "approvalStage": "none",
+    "minimumConfidence": 0.75
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "fixtureId": "deal_recommendation",
+  "description": "Deal workflow should surface approval and recommendation posture for acquisition review.",
+  "input": {
+    "commandId": "fixture_deal_001",
+    "commandText": "Assess whether we should proceed with this AI tooling acquisition today",
+    "submittedAt": "2026-03-29T21:43:00.000Z",
+    "policyMode": "executive",
+    "locale": "zh-CN",
+    "timezone": "Asia/Shanghai"
+  },
+  "expectedRoute": {
+    "workflowType": "deal",
+    "routeStatus": "routed",
+    "fallbackMode": "none",
+    "nextActionType": "send_to_planner",
+    "riskLevel": "high",
+    "urgency": "high",
+    "approvalExpected": true,
+    "approvalStage": "before_artifact_release",
+    "minimumConfidence": 0.75
+  }
+}

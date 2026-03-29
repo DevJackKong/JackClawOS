@@ -1,0 +1,14 @@
+node_modules
+.npm-cache
+dist
+.DS_Store
+coverage
+playwright-report
+test-results
+data
+.tmp
+.artifacts
+.env
+.env.local
+.env.*
+external-projects

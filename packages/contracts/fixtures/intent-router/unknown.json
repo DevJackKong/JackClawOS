@@ -1,0 +1,23 @@
+{
+  "fixtureId": "unknown_ambiguous",
+  "description": "Unknown workflow should ask for clarification instead of guessing.",
+  "input": {
+    "commandId": "fixture_unknown_001",
+    "commandText": "Analyze this and tell me what to do next",
+    "submittedAt": "2026-03-29T21:43:00.000Z",
+    "policyMode": "balanced",
+    "locale": "zh-CN",
+    "timezone": "Asia/Shanghai"
+  },
+  "expectedRoute": {
+    "workflowType": "unknown",
+    "routeStatus": "needs_clarification",
+    "fallbackMode": "clarify_and_retry",
+    "nextActionType": "ask_user_clarification",
+    "riskLevel": "high",
+    "urgency": "normal",
+    "approvalExpected": true,
+    "approvalStage": "before_planning",
+    "minimumConfidence": 0.32
+  }
+}

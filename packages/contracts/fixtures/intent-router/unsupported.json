@@ -1,0 +1,23 @@
+{
+  "fixtureId": "unsupported_presentation_request",
+  "description": "Unsupported workflow should stop cleanly and explain that the demo scope is limited.",
+  "input": {
+    "commandId": "fixture_unsupported_001",
+    "commandText": "Build me a PowerPoint roadmap for our competitor intelligence report",
+    "submittedAt": "2026-03-29T21:43:00.000Z",
+    "policyMode": "balanced",
+    "locale": "zh-CN",
+    "timezone": "Asia/Shanghai"
+  },
+  "expectedRoute": {
+    "workflowType": "unsupported",
+    "routeStatus": "blocked",
+    "fallbackMode": "block_and_explain",
+    "nextActionType": "block_run",
+    "riskLevel": "medium",
+    "urgency": "normal",
+    "approvalExpected": true,
+    "approvalStage": "before_execution",
+    "minimumConfidence": 0.2
+  }
+}

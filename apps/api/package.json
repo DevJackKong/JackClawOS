@@ -1,0 +1,23 @@
+{
+  "name": "@bossassistant/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsup src/index.ts --format esm --out-dir dist",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@bossassistant/contracts": "*",
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.1",
+    "tsup": "^8.4.0",
+    "tsx": "^4.19.3"
+  }
+}

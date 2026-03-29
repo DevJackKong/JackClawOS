@@ -1,0 +1,23 @@
+{
+  "fixtureId": "content_external_publish",
+  "description": "Content workflow should allow planning but require approval before outward-facing release.",
+  "input": {
+    "commandId": "fixture_content_001",
+    "commandText": "Draft a LinkedIn post for investors about our new strategy before we publish it",
+    "submittedAt": "2026-03-29T21:43:00.000Z",
+    "policyMode": "balanced",
+    "locale": "zh-CN",
+    "timezone": "Asia/Shanghai"
+  },
+  "expectedRoute": {
+    "workflowType": "content",
+    "routeStatus": "routed",
+    "fallbackMode": "none",
+    "nextActionType": "send_to_planner",
+    "riskLevel": "high",
+    "urgency": "normal",
+    "approvalExpected": true,
+    "approvalStage": "before_external_action",
+    "minimumConfidence": 0.75
+  }
+}

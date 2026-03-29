@@ -1,0 +1,24 @@
+{
+  "name": "bossassistant",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run build -w @bossassistant/contracts && concurrently -n api,web -c blue,green \"npm run dev -w @bossassistant/api\" \"npm run dev -w @bossassistant/web\"",
+    "dev:api": "npm run dev -w @bossassistant/api",
+    "dev:web": "npm run dev -w @bossassistant/web",
+    "build": "npm run build -w @bossassistant/contracts && npm run build -w @bossassistant/api && npm run build -w @bossassistant/web",
+    "typecheck": "npm run typecheck -w @bossassistant/contracts && npm run typecheck -w @bossassistant/api && npm run typecheck -w @bossassistant/web",
+    "verify:smoke": "npm run build && node scripts/verify-smoke.mjs",
+    "test:e2e": "VITE_API_BASE_URL=http://127.0.0.1:8795 npm run build && playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.53.2",
+    "concurrently": "^9.1.2",
+    "typescript": "^5.8.3"
+  }
+}

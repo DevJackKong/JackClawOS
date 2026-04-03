@@ -1,194 +1,209 @@
 #!/usr/bin/env node
+
 /**
- * create-jackclaw — JackClaw project scaffolder
- * Usage: npx create-jackclaw [project-name]
+ * npm create jackclaw my-team
+ * 
+ * Scaffolds a JackClaw team project with config, docker-compose, and README.
  */
 
-import chalk from 'chalk'
-import { prompt } from 'enquirer'
-import { execa } from 'execa'
-import fs from 'fs-extra'
+import fs from 'fs'
 import path from 'path'
-import { fileURLToPath } from 'url'
+import readline from 'readline'
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const TEMPLATES_DIR = path.join(__dirname, '..', 'templates')
+const BANNER = `
+🦞 JackClaw — Create your AI company
+─────────────────────────────────────
+`
 
-interface Answers {
-  templateType: 'plugin' | 'node' | 'hub'
-  projectName: string
-  description: string
-  author: string
-  installDeps: boolean
-}
-
-const TEMPLATE_INFO = {
-  plugin: {
-    label: '🔌 Plugin — extend JackClaw with custom commands & schedules',
-    color: chalk.cyan,
-  },
-  node: {
-    label: '🖥  Node — standalone JackClaw node (team member agent)',
-    color: chalk.green,
-  },
-  hub: {
-    label: '🌐 Hub — central hub that coordinates multiple nodes',
-    color: chalk.magenta,
-  },
+function ask(rl: readline.Interface, question: string, defaultVal: string): Promise<string> {
+  return new Promise(resolve => {
+    rl.question(`${question} (${defaultVal}): `, answer => {
+      resolve(answer.trim() || defaultVal)
+    })
+  })
 }
 
 async function main() {
-  const args = process.argv.slice(2)
-  const nameArg = args[0]
+  console.log(BANNER)
 
-  printBanner()
+  const dirName = process.argv[2]
 
-  // Collect answers
-  const answers = await collectAnswers(nameArg)
-  const targetDir = path.resolve(process.cwd(), answers.projectName)
-
-  if (await fs.pathExists(targetDir)) {
-    const { overwrite } = await prompt<{ overwrite: boolean }>({
-      type: 'confirm',
-      name: 'overwrite',
-      message: chalk.yellow(`Directory "${answers.projectName}" already exists. Overwrite?`),
-      initial: false,
-    })
-    if (!overwrite) {
-      console.log(chalk.red('Aborted.'))
-      process.exit(1)
-    }
-    await fs.remove(targetDir)
+  if (!dirName) {
+    console.log('Usage: npm create jackclaw <team-name>\n')
+    console.log('Example: npm create jackclaw my-team')
+    process.exit(1)
   }
 
-  // Scaffold
-  console.log()
-  console.log(chalk.cyan('▸') + ' Scaffolding project...')
-  await scaffold(answers, targetDir)
+  const targetDir = path.resolve(process.cwd(), dirName)
 
-  // Install deps
-  if (answers.installDeps) {
-    console.log(chalk.cyan('▸') + ' Installing dependencies...')
-    try {
-      await execa('npm', ['install'], { cwd: targetDir, stdio: 'inherit' })
-    } catch {
-      console.log(chalk.yellow('⚠  npm install failed. Run it manually.'))
-    }
+  if (fs.existsSync(targetDir)) {
+    console.error(`✗ Directory "${dirName}" already exists.`)
+    process.exit(1)
   }
 
-  printNextSteps(answers)
-}
-
-async function collectAnswers(nameArg?: string): Promise<Answers> {
-  const { templateType } = await prompt<{ templateType: 'plugin' | 'node' | 'hub' }>({
-    type: 'select',
-    name: 'templateType',
-    message: 'What do you want to create?',
-    choices: Object.entries(TEMPLATE_INFO).map(([k, v]) => ({
-      name: k,
-      message: v.label,
-    })),
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
   })
 
-  const { projectName } = nameArg
-    ? { projectName: nameArg }
-    : await prompt<{ projectName: string }>({
-        type: 'input',
-        name: 'projectName',
-        message: 'Project name:',
-        initial: `my-jackclaw-${templateType}`,
-        validate: (v: string) => v.length > 0 || 'Required',
-      })
+  const teamName = await ask(rl, 'Team name', dirName)
+  const nodeName = await ask(rl, 'Your node name', 'my-node')
+  const nodeRole = await ask(rl, 'Your role (ceo/engineer/designer)', 'engineer')
+  const hubPort = await ask(rl, 'Hub port', '3100')
+  const nodePort = await ask(rl, 'Node port', '19000')
 
-  const { description } = await prompt<{ description: string }>({
-    type: 'input',
-    name: 'description',
-    message: 'Description:',
-    initial: `A JackClaw ${templateType}`,
-  })
+  rl.close()
 
-  const { author } = await prompt<{ author: string }>({
-    type: 'input',
-    name: 'author',
-    message: 'Author:',
-    initial: '',
-  })
+  console.log(`\n📁 Creating ${dirName}...`)
+  fs.mkdirSync(targetDir, { recursive: true })
 
-  const { installDeps } = await prompt<{ installDeps: boolean }>({
-    type: 'confirm',
-    name: 'installDeps',
-    message: 'Install dependencies now?',
-    initial: true,
-  })
-
-  return { templateType, projectName, description, author, installDeps }
-}
-
-async function scaffold(answers: Answers, targetDir: string) {
-  const templateSrc = path.join(TEMPLATES_DIR, answers.templateType)
-
-  // Check if template exists (fallback to plugin if hub not built yet)
-  const templateExists = await fs.pathExists(templateSrc)
-  const actualTemplate = templateExists ? templateSrc : path.join(TEMPLATES_DIR, 'plugin')
-
-  await fs.copy(actualTemplate, targetDir)
-
-  // Replace placeholders in key files
-  const filesToProcess = [
-    'package.json',
-    'README.md',
-    'src/index.ts',
-  ]
-
-  for (const file of filesToProcess) {
-    const filePath = path.join(targetDir, file)
-    if (!(await fs.pathExists(filePath))) continue
-
-    let content = await fs.readFile(filePath, 'utf8')
-    content = content
-      .replace(/\{\{PROJECT_NAME\}\}/g, answers.projectName)
-      .replace(/\{\{DESCRIPTION\}\}/g, answers.description)
-      .replace(/\{\{AUTHOR\}\}/g, answers.author)
-      .replace(/\{\{TEMPLATE_TYPE\}\}/g, answers.templateType)
-    await fs.writeFile(filePath, content, 'utf8')
+  // jackclaw.config.json
+  const config = {
+    team: teamName,
+    hub: {
+      port: parseInt(hubPort),
+    },
+    node: {
+      name: nodeName,
+      role: nodeRole,
+      port: parseInt(nodePort),
+      hubUrl: `http://localhost:${hubPort}`,
+    },
+    visibility: {
+      shareMemory: true,
+      shareTasks: true,
+    },
+    reportCron: '0 8 * * *',
   }
-}
+  fs.writeFileSync(
+    path.join(targetDir, 'jackclaw.config.json'),
+    JSON.stringify(config, null, 2) + '\n',
+  )
 
-function printBanner() {
-  console.log()
-  console.log(chalk.bold.cyan('  ╔═══════════════════════════╗'))
-  console.log(chalk.bold.cyan('  ║  ') + chalk.bold.white('create-jackclaw') + chalk.bold.cyan('         ║'))
-  console.log(chalk.bold.cyan('  ║  ') + chalk.dim('JackClaw project scaffold') + chalk.bold.cyan('  ║'))
-  console.log(chalk.bold.cyan('  ╚═══════════════════════════╝'))
-  console.log()
-}
+  // docker-compose.yml
+  const dockerCompose = `version: "3.8"
 
-function printNextSteps(answers: Answers) {
-  const info = TEMPLATE_INFO[answers.templateType]
-  console.log()
-  console.log(chalk.bold.green('  ✓ Project created successfully!'))
-  console.log()
-  console.log(chalk.bold('  Next steps:'))
-  console.log()
-  console.log(chalk.cyan(`  cd ${answers.projectName}`))
-  if (!answers.installDeps) {
-    console.log(chalk.cyan('  npm install'))
+services:
+  hub:
+    image: node:22-alpine
+    working_dir: /app
+    command: npx jackclaw start --hub-only --hub-port ${hubPort}
+    ports:
+      - "${hubPort}:${hubPort}"
+    volumes:
+      - hub-data:/root/.jackclaw/hub
+    environment:
+      - NODE_ENV=production
+
+  node:
+    image: node:22-alpine
+    working_dir: /app
+    command: npx jackclaw start --node-only --node-port ${nodePort} --hub-port ${hubPort}
+    ports:
+      - "${nodePort}:${nodePort}"
+    volumes:
+      - node-data:/root/.jackclaw
+    environment:
+      - JACKCLAW_HUB_URL=http://hub:${hubPort}
+      - NODE_PORT=${nodePort}
+    depends_on:
+      - hub
+
+volumes:
+  hub-data:
+  node-data:
+`
+  fs.writeFileSync(path.join(targetDir, 'docker-compose.yml'), dockerCompose)
+
+  // README.md
+  const readme = `# ${teamName}
+
+> Powered by [JackClaw](https://github.com/DevJackKong/JackClawOS) 🦞
+
+## Quick Start
+
+\`\`\`bash
+# Option 1: Docker
+docker-compose up
+
+# Option 2: Local
+npx jackclaw start
+\`\`\`
+
+Hub: http://localhost:${hubPort}
+Node: http://localhost:${nodePort}
+
+## Configuration
+
+Edit \`jackclaw.config.json\` to customize your team setup.
+
+## Adding Nodes
+
+Each AI agent runs as a separate Node. Add more by:
+
+\`\`\`bash
+# On another machine or terminal
+npx jackclaw start --node-only --node-port 19001
+\`\`\`
+
+## Architecture
+
+\`\`\`
+CEO (You) → Hub (:${hubPort}) → Node (:${nodePort})
+                              → Node (:19001)
+                              → Node (:19002)
+\`\`\`
+`
+  fs.writeFileSync(path.join(targetDir, 'README.md'), readme)
+
+  // package.json
+  const pkg = {
+    name: teamName.toLowerCase().replace(/[^a-z0-9-]/g, '-'),
+    version: '0.1.0',
+    private: true,
+    scripts: {
+      start: 'npx jackclaw start',
+      'start:hub': 'npx jackclaw start --hub-only',
+      'start:node': 'npx jackclaw start --node-only',
+    },
   }
-  console.log(chalk.cyan('  npm run dev         ') + chalk.dim('# watch mode'))
-  console.log(chalk.cyan('  npm run build       ') + chalk.dim('# production build'))
-  if (answers.templateType === 'plugin') {
-    console.log(chalk.cyan('  jackclaw plugin load .') + chalk.dim('  # load into local node'))
-  } else if (answers.templateType === 'node') {
-    console.log(chalk.cyan('  jackclaw node start   ') + chalk.dim('# start node'))
-  } else {
-    console.log(chalk.cyan('  jackclaw hub start    ') + chalk.dim('# start hub'))
-  }
-  console.log()
-  console.log(chalk.dim('  Docs: https://jackclaw.dev/docs/plugin-development'))
-  console.log()
+  fs.writeFileSync(path.join(targetDir, 'package.json'), JSON.stringify(pkg, null, 2) + '\n')
+
+  // .gitignore
+  fs.writeFileSync(
+    path.join(targetDir, '.gitignore'),
+    'node_modules/\n.jackclaw/\n*.log\n',
+  )
+
+  // .env
+  fs.writeFileSync(
+    path.join(targetDir, '.env'),
+    `# JackClaw Configuration
+HUB_PORT=${hubPort}
+NODE_PORT=${nodePort}
+# ANTHROPIC_BASE_URL=https://api.anthropic.com
+# ANTHROPIC_API_KEY=sk-...
+`,
+  )
+
+  console.log(`
+✅ Done! Your JackClaw team "${teamName}" is ready.
+
+  cd ${dirName}
+  npx jackclaw start
+
+🦞 Hub: http://localhost:${hubPort}
+🤖 Node: http://localhost:${nodePort}
+
+Next steps:
+  1. Edit jackclaw.config.json to customize
+  2. Start with: npx jackclaw start
+  3. Add more nodes on other machines
+  4. Connect to OpenClaw for AI agent integration
+`)
 }
 
-main().catch((err) => {
-  console.error(chalk.red('Error:'), err.message)
+main().catch(err => {
+  console.error('Error:', err.message)
   process.exit(1)
 })

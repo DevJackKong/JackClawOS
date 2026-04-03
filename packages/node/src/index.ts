@@ -14,7 +14,10 @@ async function main() {
   console.log('🦞 JackClaw Node starting...')
 
   const config = loadConfig()
-  const identity = loadOrCreateIdentity()
+  const identity = loadOrCreateIdentity({
+    displayName: config.nodeName ?? config.nodeId ?? undefined,
+    role: config.nodeRole ?? undefined,
+  })
 
   if (config.nodeId) {
     identity.nodeId = config.nodeId

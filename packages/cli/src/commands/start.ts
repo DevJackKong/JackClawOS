@@ -99,7 +99,7 @@ export function registerStart(program: Command): void {
       // Resolve dist entry points relative to monorepo root
       const mono = path.resolve(__dirname, '../../../../');
       const hubScript  = path.join(mono, 'packages/hub/dist/index.js');
-      const nodeScript = path.join(mono, 'packages/node/dist/src/index.js');
+      const nodeScript = path.join(mono, 'packages/node/dist/index.js');
 
       const procs: ChildProcess[] = [];
 
@@ -134,7 +134,7 @@ export function registerStart(program: Command): void {
         console.log(chalk.green(`[start] Spawning Node on port ${nodePort}...`));
         procs.push(spawnService({
           label: 'node', color: chalk.green, script: nodeScript,
-          env: { NODE_PORT: String(nodePort), HUB_URL: `http://localhost:${hubPort}` },
+          env: { NODE_PORT: String(nodePort), JACKCLAW_HUB_URL: `http://localhost:${hubPort}` },
         }));
         try {
           await waitForHealth(`http://localhost:${nodePort}/health`);

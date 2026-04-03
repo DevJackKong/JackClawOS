@@ -1,24 +1,15 @@
 {
   "name": "create-jackclaw",
   "version": "0.1.0",
-  "description": "Create JackClaw plugins and nodes in one command",
-  "type": "module",
+  "description": "Scaffold a JackClaw team project in one command",
   "bin": {
     "create-jackclaw": "./dist/index.js"
   },
   "scripts": {
     "build": "tsc",
-    "dev": "tsc --watch",
     "start": "node dist/index.js"
   },
-  "dependencies": {
-    "chalk": "^5.3.0",
-    "enquirer": "^2.4.1",
-    "execa": "^8.0.1",
-    "fs-extra": "^11.2.0"
-  },
   "devDependencies": {
-    "@types/fs-extra": "^11.0.4",
     "@types/node": "^20.0.0",
     "typescript": "^5.4.0"
   },

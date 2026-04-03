@@ -13,7 +13,7 @@
 
 开发日志：
 
-- [bossassistant-development-log.md](/Users/james007/Documents/BossAssistant/docs/logs/bossassistant-development-log.md)
+- [bossassistant-development-log.md](../logs/bossassistant-development-log.md)
 
 状态说明：
 

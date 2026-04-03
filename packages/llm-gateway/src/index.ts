@@ -45,10 +45,19 @@ export type { GatewayStats } from './gateway.js'
 export { OpenAICompatibleProvider } from './providers/openai-compatible.js'
 export { AnthropicProvider } from './providers/anthropic.js'
 export { GoogleProvider } from './providers/google.js'
+// ── 国内模型 ──
+export { QwenProvider }     from './providers/qwen.js'
+export { ErnieProvider }    from './providers/ernie.js'
+export { HunyuanProvider }  from './providers/hunyuan.js'
+export { SparkProvider }    from './providers/spark.js'
+export { KimiProvider }     from './providers/kimi.js'
+export { ZhipuProvider }    from './providers/zhipu.js'
+export { BaichuanProvider } from './providers/baichuan.js'
 
 // ─── Quick factory ───────────────────────────────────────────────────
 
 export interface QuickConfig {
+  // ── 国际模型 ──
   openai?:      { apiKey: string; baseUrl?: string }
   anthropic?:   { apiKey: string; baseUrl?: string }
   google?:      { apiKey: string }
@@ -58,11 +67,26 @@ export interface QuickConfig {
   together?:    { apiKey: string }
   openrouter?:  { apiKey: string }
   ollama?:      { baseUrl?: string; models?: string[] }
-  /** Custom OpenAI-compatible endpoint */
+  // ── 国内模型 ──
+  /** 通义千问 — 阿里云 */
+  qwen?:        { apiKey: string; baseUrl?: string }
+  /** 文心一言 — 百度 */
+  ernie?:       { apiKey: string; baseUrl?: string }
+  /** 混元 — 腾讯云 */
+  hunyuan?:     { apiKey: string; baseUrl?: string }
+  /** 讯飞星火 */
+  spark?:       { apiKey: string; baseUrl?: string }
+  /** Kimi — Moonshot AI */
+  kimi?:        { apiKey: string; baseUrl?: string }
+  /** GLM — 智谱 AI（glm-4-flash 免费！） */
+  zhipu?:       { apiKey: string; baseUrl?: string }
+  /** 百川 AI */
+  baichuan?:    { apiKey: string; baseUrl?: string }
+  /** 自定义 OpenAI-compatible 端点 */
   custom?:      { name: string; apiKey?: string; baseUrl: string; defaultModel?: string }
-  /** Default provider for unknown models */
+  /** 默认 provider */
   defaultProvider?: string
-  /** Fallback chain */
+  /** 故障转移链 */
   fallbackChain?: string[]
 }
 
@@ -149,6 +173,70 @@ export function createGateway(config: QuickConfig): LLMGateway {
       baseUrl: config.ollama.baseUrl ?? 'http://localhost:11434',
       defaultModel: config.ollama.models?.[0] ?? 'llama3',
       models: { ...(config.ollama.models?.reduce((a, m) => ({ ...a, [m]: m }), {})) },
+    })
+  }
+
+  // ── 国内模型 ──
+  if (config.qwen) {
+    providers.push({
+      provider: 'qwen',
+      apiKey: config.qwen.apiKey,
+      baseUrl: config.qwen.baseUrl ?? 'https://dashscope.aliyuncs.com/compatible-mode',
+      defaultModel: 'qwen-max',
+    })
+  }
+
+  if (config.ernie) {
+    providers.push({
+      provider: 'ernie',
+      apiKey: config.ernie.apiKey,
+      baseUrl: config.ernie.baseUrl ?? 'https://qianfan.baidubce.com/v2',
+      defaultModel: 'ernie-4.5-turbo',
+    })
+  }
+
+  if (config.hunyuan) {
+    providers.push({
+      provider: 'hunyuan',
+      apiKey: config.hunyuan.apiKey,
+      baseUrl: config.hunyuan.baseUrl ?? 'https://api.hunyuan.cloud.tencent.com/v1',
+      defaultModel: 'hunyuan-pro',
+    })
+  }
+
+  if (config.spark) {
+    providers.push({
+      provider: 'spark',
+      apiKey: config.spark.apiKey,
+      baseUrl: config.spark.baseUrl ?? 'https://spark-api-open.xf-yun.com/v1',
+      defaultModel: 'generalv3.5',
+    })
+  }
+
+  if (config.kimi) {
+    providers.push({
+      provider: 'kimi',
+      apiKey: config.kimi.apiKey,
+      baseUrl: config.kimi.baseUrl ?? 'https://api.moonshot.cn/v1',
+      defaultModel: 'moonshot-v1-32k',
+    })
+  }
+
+  if (config.zhipu) {
+    providers.push({
+      provider: 'zhipu',
+      apiKey: config.zhipu.apiKey,
+      baseUrl: config.zhipu.baseUrl ?? 'https://open.bigmodel.cn/api/paas/v4',
+      defaultModel: 'glm-4-flash',
+    })
+  }
+
+  if (config.baichuan) {
+    providers.push({
+      provider: 'baichuan',
+      apiKey: config.baichuan.apiKey,
+      baseUrl: config.baichuan.baseUrl ?? 'https://api.baichuan-ai.com/v1',
+      defaultModel: 'Baichuan4',
     })
   }
 

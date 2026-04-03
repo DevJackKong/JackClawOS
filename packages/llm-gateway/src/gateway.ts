@@ -14,6 +14,13 @@ import type {
 import { OpenAICompatibleProvider } from './providers/openai-compatible.js'
 import { AnthropicProvider } from './providers/anthropic.js'
 import { GoogleProvider } from './providers/google.js'
+import { QwenProvider } from './providers/qwen.js'
+import { ErnieProvider } from './providers/ernie.js'
+import { HunyuanProvider } from './providers/hunyuan.js'
+import { SparkProvider } from './providers/spark.js'
+import { KimiProvider } from './providers/kimi.js'
+import { ZhipuProvider } from './providers/zhipu.js'
+import { BaichuanProvider } from './providers/baichuan.js'
 
 // ─── Cost per 1M tokens (USD) ────────────────────────────────────────
 const PRICE_TABLE: Record<string, { input: number; output: number }> = {
@@ -36,6 +43,28 @@ const PRICE_TABLE: Record<string, { input: number; output: number }> = {
   // Groq (free tier, very cheap)
   'llama-3.3-70b-versatile':    { input: 0.59,  output: 0.79 },
   'mixtral-8x7b-32768':         { input: 0.24,  output: 0.24 },
+  // ── 国内模型 ──
+  // 通义千问 (Qwen)
+  'qwen-max':                   { input: 0.56,  output: 2.24 },
+  'qwen-plus':                  { input: 0.11,  output: 0.34 },
+  'qwen-turbo':                 { input: 0.056, output: 0.14 },
+  // 文心一言 (ERNIE)
+  'ernie-4.5-turbo':            { input: 0.28,  output: 0.28 },
+  'ernie-4.0':                  { input: 0.42,  output: 0.42 },
+  // 混元 (Hunyuan)
+  'hunyuan-pro':                { input: 0.98,  output: 2.80 },
+  'hunyuan-turbo':              { input: 0.28,  output: 0.84 },
+  'hunyuan-standard':           { input: 0.14,  output: 0.28 },
+  // Kimi (Moonshot)
+  'moonshot-v1-8k':             { input: 0.17,  output: 0.17 },
+  'moonshot-v1-32k':            { input: 0.35,  output: 0.35 },
+  'moonshot-v1-128k':           { input: 1.40,  output: 1.40 },
+  // 智谱 GLM
+  'glm-4':                      { input: 0.98,  output: 0.98 },
+  'glm-4-flash':                { input: 0,     output: 0    }, // 免费
+  'glm-4-air':                  { input: 0.014, output: 0.014 },
+  // 讯飞星火
+  'generalv3.5':                { input: 0.21,  output: 0.21 },
   // Ollama (local = free)
   'llama3':              { input: 0, output: 0 },
   'mistral':             { input: 0, output: 0 },
@@ -113,6 +142,14 @@ export class LLMGateway {
     if (model.startsWith('deepseek'))    return this.get('deepseek')
     if (model.startsWith('llama') || model.startsWith('mixtral') || model.startsWith('gemma'))
                                           return this.get('groq') ?? this.get('ollama') ?? this.getDefault()
+    if (model.startsWith('qwen'))        return this.get('qwen')
+    if (model.startsWith('ernie'))       return this.get('ernie')
+    if (model.startsWith('hunyuan'))     return this.get('hunyuan')
+    if (model.startsWith('general'))     return this.get('spark')  // 星火
+    if (model.startsWith('moonshot'))    return this.get('kimi')
+    if (model.startsWith('glm'))         return this.get('zhipu')
+    if (model.startsWith('Baichuan'))    return this.get('baichuan')
+    if (model.startsWith('yi-'))         return this.get('openrouter') ?? this.getDefault()
     if (model.startsWith('qwen') || model.startsWith('yi') || model.startsWith('moonshot'))
                                           return this.get('openrouter') ?? this.getDefault()
 
@@ -217,6 +254,13 @@ export class LLMGateway {
     switch (config.provider) {
       case 'anthropic': return new AnthropicProvider(config)
       case 'google':    return new GoogleProvider(config)
+      case 'qwen':      return new QwenProvider(config)
+      case 'ernie':     return new ErnieProvider(config)
+      case 'hunyuan':   return new HunyuanProvider(config)
+      case 'spark':     return new SparkProvider(config)
+      case 'kimi':      return new KimiProvider(config)
+      case 'zhipu':     return new ZhipuProvider(config)
+      case 'baichuan':  return new BaichuanProvider(config)
       default:          return new OpenAICompatibleProvider(config)
     }
   }

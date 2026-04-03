@@ -43,6 +43,14 @@ export interface JackClawConfig {
       together?:    LLMProviderConfig
       openrouter?:  LLMProviderConfig
       ollama?:      LLMProviderConfig & { baseUrl: string }
+      // ── 国内模型 ──
+      qwen?:        LLMProviderConfig  // 通义千问
+      ernie?:       LLMProviderConfig  // 文心一言
+      hunyuan?:     LLMProviderConfig  // 混元
+      spark?:       LLMProviderConfig  // 讯飞星火
+      kimi?:        LLMProviderConfig  // Kimi (Moonshot)
+      zhipu?:       LLMProviderConfig  // 智谱 GLM
+      baichuan?:    LLMProviderConfig  // 百川
       [key: string]: LLMProviderConfig | undefined
     }
   }
@@ -103,6 +111,42 @@ const DEFAULTS: JackClawConfig = {
         apiKey: '',
         baseUrl: process.env.OLLAMA_BASE_URL ?? 'http://localhost:11434',
         defaultModel: 'llama3',
+      },
+      // ── 国内模型 ──
+      qwen: {
+        enabled: !!process.env.QWEN_API_KEY,
+        apiKey: process.env.QWEN_API_KEY ?? '',
+        defaultModel: 'qwen-plus',
+      },
+      ernie: {
+        enabled: !!process.env.ERNIE_API_KEY,
+        apiKey: process.env.ERNIE_API_KEY ?? '',
+        defaultModel: 'ernie-4.5-turbo',
+      },
+      hunyuan: {
+        enabled: !!process.env.HUNYUAN_API_KEY,
+        apiKey: process.env.HUNYUAN_API_KEY ?? '',
+        defaultModel: 'hunyuan-turbo',
+      },
+      spark: {
+        enabled: !!process.env.SPARK_API_KEY,
+        apiKey: process.env.SPARK_API_KEY ?? '',
+        defaultModel: 'generalv3.5',
+      },
+      kimi: {
+        enabled: !!process.env.KIMI_API_KEY,
+        apiKey: process.env.KIMI_API_KEY ?? '',
+        defaultModel: 'moonshot-v1-32k',
+      },
+      zhipu: {
+        enabled: !!process.env.ZHIPU_API_KEY,
+        apiKey: process.env.ZHIPU_API_KEY ?? '',
+        defaultModel: 'glm-4-flash',
+      },
+      baichuan: {
+        enabled: !!process.env.BAICHUAN_API_KEY,
+        apiKey: process.env.BAICHUAN_API_KEY ?? '',
+        defaultModel: 'Baichuan4',
       },
     },
   },

@@ -96,7 +96,14 @@ async function getCryptoMarketSnapshot(forceRefresh = false): Promise<CryptoMark
 const app = express();
 const port = Number(process.env.PORT ?? 8787);
 
-app.use(cors());
+const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS ?? "http://127.0.0.1:5173,http://localhost:5173")
+  .split(",")
+  .map((o) => o.trim())
+  .filter(Boolean);
+
+app.use(cors({
+  origin: allowedOrigins,
+}));
 app.use(express.json());
 
 app.get("/api/health", (_request, response) => {

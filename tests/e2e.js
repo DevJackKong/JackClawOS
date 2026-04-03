@@ -208,6 +208,98 @@ async function testSummary() {
   ok('Has reporting nodes', (r.b?.reportingNodes ?? 0) >= 1);
 }
 
+async function testChatSend() {
+  console.log('\n🔷 ClawChat: Send + Inbox');
+  // Send message from Alice to Bob
+  const r1 = await req('POST', '/api/chat/send', {
+    id: `msg-${Date.now()}`,
+    from: 'alice',
+    to: 'bob',
+    content: 'Hey Bob, can you review my PR?',
+    type: 'text',
+    ts: Date.now(),
+    signature: '',
+    encrypted: false,
+  }, aliceToken);
+  ok('Chat send → 200', r1.s === 200);
+  ok('Message queued for bob', (r1.b?.queued || []).includes('bob'));
+
+  // Bob pulls inbox
+  const r2 = await req('GET', '/api/chat/inbox?nodeId=bob', null, bobToken);
+  ok('Inbox → 200', r2.s === 200);
+  ok('Bob has ≥1 message', (r2.b?.count ?? 0) >= 1);
+}
+
+async function testChatThread() {
+  console.log('\n🔷 ClawChat: Thread');
+  const r1 = await req('POST', '/api/chat/thread', {
+    participants: ['alice', 'bob'],
+    title: 'PR Review Discussion',
+  }, aliceToken);
+  ok('Create thread → 200', r1.s === 200);
+  ok('Thread has id', typeof r1.b?.thread?.id === 'string');
+
+  const r2 = await req('GET', '/api/chat/threads?nodeId=alice', null, aliceToken);
+  ok('List threads → 200', r2.s === 200);
+}
+
+async function testChatGroup() {
+  console.log('\n🔷 ClawChat: Group');
+  const r1 = await req('POST', '/api/chat/group/create', {
+    name: 'Engineering Team',
+    members: ['ceo-jack', 'alice', 'bob'],
+    createdBy: 'ceo-jack',
+    topic: 'Sprint planning',
+  }, ceoToken);
+  ok('Create group → 200', r1.s === 200);
+  ok('Group has id', typeof r1.b?.group?.groupId === 'string');
+
+  const r2 = await req('GET', '/api/chat/groups?nodeId=alice', null, aliceToken);
+  ok('List groups → 200', r2.s === 200);
+  ok('Alice in ≥1 group', (r2.b?.groups?.length ?? 0) >= 1);
+}
+
+async function testCollaboration() {
+  console.log('\n🔷 Collaboration: Invite + Respond');
+  // First register Bob's handle
+  const kp = genKeyPair();
+  await req('POST', '/api/directory/register', {
+    handle: '@bob',
+    nodeId: 'bob',
+    publicKey: kp.publicKey,
+    displayName: 'Designer Bob',
+    role: 'member',
+    capabilities: ['design'],
+    visibility: 'public',
+  }, bobToken);
+
+  // Alice invites Bob
+  const r1 = await req('POST', '/api/collab/invite', {
+    fromHandle: '@alice',
+    toHandle: '@bob',
+    topic: 'Login page design review',
+    memoryScope: 'shared',
+    memoryClearOnEnd: false,
+  }, aliceToken);
+  ok('Invite → 201', r1.s === 201);
+  ok('Has sessionId', typeof r1.b?.sessionId === 'string');
+  const inviteId = r1.b?.inviteId;
+
+  // Bob responds
+  const r2 = await req('POST', '/api/collab/respond', {
+    inviteId,
+    fromHandle: '@bob',
+    decision: 'accept',
+  }, bobToken);
+  ok('Respond → 200', r2.s === 200);
+  ok('Status = accepted', r2.b?.status === 'accepted');
+
+  // List active sessions
+  const r3 = await req('GET', '/api/collab/sessions?status=accepted', null, aliceToken);
+  ok('Sessions list → 200', r3.s === 200);
+  ok('Has ≥1 active session', (r3.b?.count ?? 0) >= 1);
+}
+
 async function testDirectory() {
   console.log('\n🔷 Directory: Register + Lookup');
   // Register a handle for Alice
@@ -252,7 +344,11 @@ async function run() {
     await testNodesListAuth();
     await testReport();
     await testSummary();
+    await testChatSend();
+    await testChatThread();
+    await testChatGroup();
     await testDirectory();
+    await testCollaboration();
   } catch (err) {
     console.log(`\n💥 Fatal: ${err.message}`);
     console.log(err.stack);

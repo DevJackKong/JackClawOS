@@ -258,3 +258,7 @@ export function createMockScheduleContext(
     ...overrides,
   }
 }
+
+// ─── Harness Types ────────────────────────────────────────────────────────────
+
+export type { HarnessTask, HarnessResult } from '@jackclaw/harness'

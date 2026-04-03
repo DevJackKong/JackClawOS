@@ -266,6 +266,10 @@ export class OwnerMemoryAuth {
       const data = JSON.parse(fs.readFileSync(path.join(this.storePath, `${this.nodeId}.json`), 'utf-8'))
       for (const g of data.grants ?? []) this.grants.set(g.grantId, g)
       this.auditLogs = data.auditLogs ?? []
+      for (const r of data.pendingRequests ?? []) {
+        const { requestId, ...rest } = r as { requestId: string } & AuthRequest & { requestedAt: number }
+        this.pendingRequests.set(requestId, rest)
+      }
     } catch { /* 首次运行 */ }
   }
 
@@ -273,6 +277,7 @@ export class OwnerMemoryAuth {
     const data = {
       grants: [...this.grants.values()],
       auditLogs: this.auditLogs.slice(-1000),
+      pendingRequests: [...this.pendingRequests.entries()].map(([id, r]) => ({ ...r, requestId: id })),
     }
     fs.writeFileSync(
       path.join(this.storePath, `${this.nodeId}.json`),

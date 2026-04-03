@@ -8,6 +8,7 @@ import { getOwnerMemory } from './owner-memory'
 import { TaskPlanner, formatPlan } from './task-planner'
 import { createOwnerAuthRouter } from './routes/owner-auth'
 import { WorkloadTracker } from './workload-tracker'
+import { getPerformanceLedger } from './performance-ledger'
 
 // Harness runner 接口（运行时注入，避免编译期跨包依赖）
 export type HarnessRunner = (opts: {
@@ -110,6 +111,20 @@ export function createServer(identity: NodeIdentity, config: JackClawConfig) {  
 
   // ── OwnerMemory 授权区 ───────────────────────────────────────────────────────
   app.use('/api/owner', createOwnerAuthRouter(identity))
+
+  // ── Performance Ledger ───────────────────────────────────────────────────────
+
+  // GET /api/performance/stats — 本周绩效统计
+  app.get('/api/performance/stats', (_req: Request, res: Response) => {
+    res.json(getPerformanceLedger().weeklyStats())
+  })
+
+  // GET /api/performance/recommendation — 自动调优建议
+  app.get('/api/performance/recommendation', (_req: Request, res: Response) => {
+    const stats = getPerformanceLedger().weeklyStats()
+    const retryTuning = getPerformanceLedger().autoTuneRetry()
+    res.json({ recommendation: stats.recommendation, retryTuning })
+  })
 
   // ── Error handler ───────────────────────────────────────────────────────────
   app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {

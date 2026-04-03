@@ -29,9 +29,12 @@ export type {
   CollabInvite,
   WatchdogAlert,
   AlertSeverity,
+  PendingAuthRequest,
 } from './hooks/heartbeat.hook.js'
 export {
   onHeartbeat,
+  checkOwnerEmotionalState,
+  checkPendingAuthRequests,
   checkPendingInvites,
   checkWatchdogAlerts,
 } from './hooks/heartbeat.hook.js'

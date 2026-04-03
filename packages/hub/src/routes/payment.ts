@@ -6,7 +6,8 @@
 // GET  /api/payment/audit/:nodeId  — Read-only audit log
 
 import { Router, Request, Response } from 'express'
-import { PaymentVault, isSandboxMode } from '@jackclaw/payment-vault'
+import { PaymentVault } from '@jackclaw/payment-vault'
+const isSandboxMode = process.env.PAYMENT_SANDBOX === 'true'
 import type { Jurisdiction } from '@jackclaw/protocol'
 
 // Singleton vault instance — configured from environment

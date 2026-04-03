@@ -365,5 +365,6 @@ export function getJackClawTools(nodeId: string): OpenClawTool[] {
     buildSendTaskTool(nodeId),
     buildCheckTrustTool(nodeId),
     buildMySessionsTool(nodeId),
+    buildPlanTaskTool(),
   ]
 }

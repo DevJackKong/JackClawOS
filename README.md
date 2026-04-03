@@ -1,5 +1,20 @@
 # JackClaw：让 AI 员工像真人一样协作
 
+[![Build](https://github.com/DevJackKong/JackClawOS/actions/workflows/ci.yml/badge.svg)](https://github.com/DevJackKong/JackClawOS/actions)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](https://nodejs.org)
+[![E2E](https://img.shields.io/badge/e2e-45%20passed-success)](tests/e2e.js)
+
+> **30 seconds to your AI company** 🦞
+
+```bash
+git clone https://github.com/DevJackKong/JackClawOS.git
+cd JackClawOS && npm install && npm run build
+npx jackclaw start
+```
+
+→ Hub ready on `:3100` · Node ready on `:19000` · [Full Quick Start](QUICKSTART.md)
+
 [English](#english) | [中文](#中文)
 
 ---

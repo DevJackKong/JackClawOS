@@ -678,7 +678,14 @@ export class RunStore {
       return null;
     }
 
-    const raw = JSON.parse(row.payload_json) as Record<string, unknown>;
+    let raw: Record<string, unknown>;
+    try {
+      raw = JSON.parse(row.payload_json) as Record<string, unknown>;
+    } catch {
+      console.error(`[RunStore] corrupt payload_json for run ${runId}, skipping`);
+      return null;
+    }
+
     const parsed = submitCommandResponseSchema.safeParse(raw);
 
     if (parsed.success) {
@@ -693,7 +700,8 @@ export class RunStore {
     }).safeParse(raw);
 
     if (!legacyParsed.success) {
-      return submitCommandResponseSchema.parse(raw);
+      console.error(`[RunStore] unrecoverable payload for run ${runId}`, legacyParsed.error.message);
+      return null;
     }
 
     return submitCommandResponseSchema.parse({

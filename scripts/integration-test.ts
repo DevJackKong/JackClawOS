@@ -64,7 +64,7 @@ async function main() {
     body: JSON.stringify({
       nodeId: "test-node-001",
       name: "Test Node",
-      role: "worker",
+      role: "ceo",
       publicKey: "test-key",
       callbackUrl: `http://localhost:${NODE_PORT}`,
     })

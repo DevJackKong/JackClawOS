@@ -45,26 +45,35 @@ const DEFAULTS: JackClawConfig = {
 }
 
 export function loadConfig(): JackClawConfig {
+  let base: JackClawConfig
+
   if (!fs.existsSync(CONFIG_FILE)) {
     // Write defaults so user can edit
     fs.mkdirSync(CONFIG_DIR, { recursive: true })
     fs.writeFileSync(CONFIG_FILE, JSON.stringify(DEFAULTS, null, 2))
     console.log(`[config] Created default config at: ${CONFIG_FILE}`)
-    return { ...DEFAULTS }
+    base = { ...DEFAULTS }
+  } else {
+    const raw = fs.readFileSync(CONFIG_FILE, 'utf8')
+    const user = JSON.parse(raw) as Partial<JackClawConfig>
+    base = {
+      ...DEFAULTS,
+      ...user,
+      visibility: {
+        ...DEFAULTS.visibility,
+        ...(user.visibility ?? {}),
+      },
+      ai: {
+        ...DEFAULTS.ai,
+        ...(user.ai ?? {}),
+      },
+    }
   }
 
-  const raw = fs.readFileSync(CONFIG_FILE, 'utf8')
-  const user = JSON.parse(raw) as Partial<JackClawConfig>
-  return {
-    ...DEFAULTS,
-    ...user,
-    visibility: {
-      ...DEFAULTS.visibility,
-      ...(user.visibility ?? {}),
-    },
-    ai: {
-      ...DEFAULTS.ai,
-      ...(user.ai ?? {}),
-    },
-  }
+  // Allow env var overrides for testing / containerized deployments
+  if (process.env['NODE_PORT']) base.port = parseInt(process.env['NODE_PORT'], 10)
+  if (process.env['JACKCLAW_HUB_URL']) base.hubUrl = process.env['JACKCLAW_HUB_URL']
+  if (process.env['JACKCLAW_NODE_ID']) base.nodeId = process.env['JACKCLAW_NODE_ID']
+
+  return base
 }

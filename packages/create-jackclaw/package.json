@@ -1,5 +1,5 @@
 {
-  "name": "create-jackclaw",
+  "name": "@jackclaw/create",
   "version": "0.1.0",
   "description": "Scaffold a JackClaw team project in one command",
   "bin": {

@@ -324,4 +324,90 @@ export class MemoryManager {
 
     return { staleCount }
   }
+
+  /**
+   * Semantic search — returns entries ranked by relevance to query.
+   *
+   * Uses TF-IDF + keyword overlap (local, no API needed).
+   * When an LLM embedder is provided, upgrades to cosine similarity.
+   *
+   * @param nodeId   Node whose memory to search
+   * @param query    Natural language query
+   * @param topK     Number of results to return (default 5)
+   * @param embedder Optional: async fn that returns embedding vector
+   */
+  async semanticQuery(
+    nodeId: string,
+    query: string,
+    topK = 5,
+    embedder?: (text: string) => Promise<number[]>,
+  ): Promise<Array<MemDir & { score: number }>> {
+    const all = loadAll(nodeId)
+    if (!all.length) return []
+
+    if (embedder) {
+      // ── Vector similarity (LLM embeddings) ──────────────────────
+      const [queryVec, ...entryVecs] = await Promise.all([
+        embedder(query),
+        ...all.map(e => embedder(e.content)),
+      ])
+
+      const scored = all.map((e, i) => ({
+        ...e,
+        score: cosineSimilarity(queryVec, entryVecs[i]!),
+      }))
+      return scored.sort((a, b) => b.score - a.score).slice(0, topK)
+    } else {
+      // ── TF-IDF fallback (no API needed) ─────────────────────────
+      const queryTokens = tokenize(query)
+      const corpus = all.map(e => tokenize(e.content))
+
+      // IDF: log(N / df)
+      const N = corpus.length
+      const df: Record<string, number> = {}
+      for (const tokens of corpus) {
+        for (const t of new Set(tokens)) {
+          df[t] = (df[t] ?? 0) + 1
+        }
+      }
+      const idf = (t: string) => Math.log((N + 1) / ((df[t] ?? 0) + 1))
+
+      // TF-IDF score for each entry
+      const scored = all.map((e, i) => {
+        const tokens = corpus[i]!
+        const tf: Record<string, number> = {}
+        for (const t of tokens) tf[t] = (tf[t] ?? 0) + 1
+
+        let score = 0
+        for (const qt of queryTokens) {
+          score += (tf[qt] ?? 0) * idf(qt)
+        }
+        // Boost by recency + importance
+        const ageDays = (Date.now() - e.updatedAt) / 86400000
+        const recency = Math.exp(-ageDays / 30)
+        const boost = 1 + recency * 0.3
+        return { ...e, score: score * boost }
+      })
+
+      return scored.sort((a, b) => b.score - a.score).slice(0, topK)
+    }
+  }
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+
+function tokenize(text: string): string[] {
+  return text.toLowerCase().split(/\W+/).filter(t => t.length > 1)
+}
+
+function cosineSimilarity(a: number[], b: number[]): number {
+  if (!a.length || a.length !== b.length) return 0
+  let dot = 0, normA = 0, normB = 0
+  for (let i = 0; i < a.length; i++) {
+    dot   += a[i]! * b[i]!
+    normA += a[i]! * a[i]!
+    normB += b[i]! * b[i]!
+  }
+  const denom = Math.sqrt(normA) * Math.sqrt(normB)
+  return denom === 0 ? 0 : dot / denom
 }

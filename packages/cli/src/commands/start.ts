@@ -12,6 +12,7 @@ import net from 'net';
 import path from 'path';
 import http from 'http';
 import chalk from 'chalk';
+import { TunnelManager } from '@jackclaw/tunnel';
 
 // ─── Port check ────────────────────────────────────────────────────────────────
 
@@ -91,12 +92,14 @@ export function registerStart(program: Command): void {
     .option('--hub-port <port>', 'Hub HTTP port', '3100')
     .option('--node-port <port>', 'Node HTTP port', '19000')
     .option('--nodes <count>', 'Number of nodes to start', '1')
-    .action(async (opts: { hubOnly?: boolean; nodeOnly?: boolean; hubPort: string; nodePort: string; nodes: string }) => {
+    .option('--tunnel [mode]', 'Enable tunnel: cloudflare (default) or selfhosted')
+    .action(async (opts: { hubOnly?: boolean; nodeOnly?: boolean; hubPort: string; nodePort: string; nodes: string; tunnel?: string | boolean }) => {
       const startHub  = !opts.nodeOnly;
       const startNode = !opts.hubOnly;
       const nodeCount = Math.max(1, parseInt(opts.nodes, 10) || 1);
       const hubPort   = parseInt(opts.hubPort, 10);
       const nodePort  = parseInt(opts.nodePort, 10);
+      const tunnelMode = opts.tunnel === true ? 'cloudflare' : (opts.tunnel as string | undefined);
 
       // Resolve dist entry points relative to monorepo root
       const mono = path.resolve(__dirname, '../../../../');
@@ -160,12 +163,43 @@ export function registerStart(program: Command): void {
 
       if (procs.length === 0) { console.error(chalk.red('Nothing to start.')); process.exit(1); }
 
+      // ── Tunnel ────────────────────────────────────────────────────
+      let tunnelUrl: string | null = null
+      if (tunnelMode && startHub) {
+        const validModes = ['cloudflare', 'selfhosted']
+        const mode = validModes.includes(tunnelMode) ? tunnelMode as 'cloudflare' | 'selfhosted' : 'cloudflare'
+        console.log(chalk.yellow(`[tunnel] Starting ${mode} tunnel for Hub port ${hubPort}...`))
+        try {
+          const tm = new TunnelManager({
+            onUrl: (url) => {
+              console.log(chalk.bold.yellow(`\n🌐 Public URL: ${url}`))
+              console.log(chalk.gray(`   Share this with external nodes and teammates\n`))
+            }
+          })
+          tunnelUrl = await tm.start(hubPort, mode)
+          // Graceful shutdown
+          const originalShutdown = shutdown
+          process.on('SIGINT',  () => { tm.stop().finally(() => originalShutdown(procs)) })
+          process.on('SIGTERM', () => { tm.stop().finally(() => originalShutdown(procs)) })
+        } catch (e: any) {
+          console.warn(chalk.yellow(`[tunnel] Failed to start tunnel: ${e.message}`))
+          console.warn(chalk.gray(`   Is cloudflared installed? brew install cloudflare/cloudflare/cloudflared`))
+        }
+      }
+
       console.log(chalk.bold('\n🦞 JackClaw is running'));
-      if (startHub) console.log(chalk.blue(`   Hub:  http://localhost:${hubPort}`));
+      if (startHub) {
+        console.log(chalk.blue(`   Hub:       http://localhost:${hubPort}`))
+        console.log(chalk.blue(`   Dashboard: http://localhost:${hubPort}`))
+        if (tunnelUrl) console.log(chalk.bold.yellow(`   Public:    ${tunnelUrl}`))
+      }
       if (startNode) console.log(chalk.green(`   Node: http://localhost:${nodePort}`));
       console.log(chalk.gray('   Ctrl+C to stop.\n'));
-      process.on('SIGINT',  () => shutdown(procs));
-      process.on('SIGTERM', () => shutdown(procs));
+
+      if (!tunnelMode) {
+        process.on('SIGINT',  () => shutdown(procs));
+        process.on('SIGTERM', () => shutdown(procs));
+      }
     });
 }
 

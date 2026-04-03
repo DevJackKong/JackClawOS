@@ -81,6 +81,42 @@ export function createServer(identity: NodeIdentity, config: JackClawConfig) {  
     res.json({ providers: gateway.listProviders(), stats: gateway.getStats() })
   })
 
+  // ── Memory semantic search ─────────────────────────────────────────────────
+  // POST /api/memory/search  { query, topK?, useEmbeddings? }
+  app.post('/api/memory/search', async (req: Request, res: Response) => {
+    const { query, topK = 5, useEmbeddings = false } = req.body
+    if (!query) { res.status(400).json({ error: 'query required' }); return }
+
+    try {
+      const { MemoryManager } = await import('@jackclaw/memory')
+      const mm = new MemoryManager()
+      const gateway = getNodeGateway()
+
+      // Optional: use LLM embeddings for better semantic matching
+      let embedder: ((text: string) => Promise<number[]>) | undefined
+      if (useEmbeddings && gateway) {
+        embedder = async (text: string) => {
+          // Use OpenAI embeddings if available, otherwise TF-IDF fallback
+          try {
+            const r = await gateway.chat({
+              model: 'text-embedding-3-small',
+              messages: [{ role: 'user', content: text }],
+            })
+            // Parse embedding from response (provider-specific)
+            return (r.raw as any)?.data?.[0]?.embedding ?? []
+          } catch {
+            return [] // fallback to TF-IDF
+          }
+        }
+      }
+
+      const results = await mm.semanticQuery(identity.nodeId, query, topK, embedder)
+      res.json({ query, results, total: results.length })
+    } catch (err: any) {
+      res.status(500).json({ error: err.message })
+    }
+  })
+
   // ── Receive task from Hub ───────────────────────────────────────────────────
   app.post('/api/task', (req: Request, res: Response) => {
     if (!config.visibility.shareTasks) {

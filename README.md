@@ -8,9 +8,13 @@
 > **30 seconds to your AI company** 🦞
 
 ```bash
+# Option A: npm global install
+npm install -g @jackclaw/cli
+jackclaw demo
+
+# Option B: git clone
 git clone https://github.com/DevJackKong/JackClawOS.git
-cd JackClawOS && npm install && npm run build
-npx jackclaw start
+cd JackClawOS && npm install && npm run build && npx jackclaw demo
 ```
 
 → Hub ready on `:3100` · Node ready on `:19000` · Dashboard at `:3100` · [Quick Start](QUICKSTART.md)

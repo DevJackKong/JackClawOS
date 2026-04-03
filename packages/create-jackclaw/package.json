@@ -16,6 +16,14 @@
   "engines": {
     "node": ">=20.0.0"
   },
-  "keywords": ["jackclaw", "scaffold", "cli", "create"],
-  "license": "MIT"
+  "keywords": [
+    "jackclaw",
+    "scaffold",
+    "cli",
+    "create"
+  ],
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  }
 }

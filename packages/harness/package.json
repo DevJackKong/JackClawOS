@@ -16,14 +16,17 @@
     "dev": "ts-node src/index.ts"
   },
   "dependencies": {
-    "@jackclaw/protocol": "*",
-    "@jackclaw/memory": "*"
+    "@jackclaw/protocol": "^0.1.0",
+    "@jackclaw/memory": "^0.1.0"
   },
   "peerDependencies": {
-    "@jackclaw/node": "*"
+    "@jackclaw/node": "^0.1.0"
   },
   "devDependencies": {
     "typescript": "^5.4.0",
     "@types/node": "^20.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

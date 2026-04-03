@@ -35,5 +35,8 @@
     "protocol",
     "agent",
     "multi-agent"
-  ]
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
 }

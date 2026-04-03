@@ -40,5 +40,8 @@
     "agent",
     "rag",
     "semantic"
-  ]
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
 }

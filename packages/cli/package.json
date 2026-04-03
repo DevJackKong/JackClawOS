@@ -12,7 +12,7 @@
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
-    "@jackclaw/tunnel": "*",
+    "@jackclaw/tunnel": "^0.1.0",
     "axios": "^1.6.0",
     "chalk": "^4.1.2",
     "commander": "^11.1.0",
@@ -45,5 +45,8 @@
   "keywords": [
     "jackclaw",
     "cli"
-  ]
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
 }

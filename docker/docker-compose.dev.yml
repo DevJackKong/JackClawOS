@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  jackclaw-dev:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: builder
+    ports:
+      - "3100:3100"
+      - "19000:19000"
+    env_file:
+      - ../.env
+    volumes:
+      - ..:/app
+      - /app/node_modules
+    command: npm run dev
+    restart: unless-stopped

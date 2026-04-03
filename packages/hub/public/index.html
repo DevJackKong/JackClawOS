@@ -69,6 +69,16 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
     <h2>🔐 Hub Info</h2>
     <div id="hub-info" style="color:#888">Loading...</div>
   </div>
+
+  <div class="card" style="grid-column: 1 / -1;">
+    <h2>💬 ClawChat (Live)</h2>
+    <div id="chat-log" style="height:200px;overflow-y:auto;background:#111;border-radius:8px;padding:12px;margin-bottom:12px;font-family:monospace;"></div>
+    <div style="display:flex;gap:8px;">
+      <select id="chat-to" style="background:#222;color:#fff;border:1px solid #444;border-radius:6px;padding:8px 12px;font-size:13px;"><option>Loading nodes...</option></select>
+      <input id="chat-input" type="text" placeholder="Type a message..." style="flex:1;background:#222;color:#fff;border:1px solid #444;border-radius:6px;padding:8px 12px;font-size:14px;outline:none;" />
+      <button onclick="sendChat()" style="background:#22c55e;color:#000;border:none;border-radius:6px;padding:8px 20px;font-weight:600;cursor:pointer;font-size:14px;">Send</button>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -149,10 +159,63 @@ async function refresh() {
   }
 
   document.getElementById('last-refresh').textContent = new Date().toLocaleTimeString();
+
+  // Update chat node selector
+  const sel = document.getElementById('chat-to');
+  if (sel && nodeArr.length > 0) {
+    const current = sel.value;
+    sel.innerHTML = nodeArr.map(n => '<option value="'+n.nodeId+'"'+(n.nodeId===current?' selected':'')+'>'+n.name+'</option>').join('');
+  }
 }
 
 refresh();
 setInterval(refresh, 5000);
+
+// ─── WebSocket Chat ─────────────────────────────────────────────────
+const chatNodeId = 'dashboard-user-' + Math.random().toString(36).slice(2,6);
+const wsUrl = location.origin.replace(/^http/, 'ws') + '/chat/ws?nodeId=' + chatNodeId;
+let chatWs;
+const chatLog = document.getElementById('chat-log');
+
+function connectChat() {
+  chatWs = new WebSocket(wsUrl);
+  chatWs.onopen = () => appendChat('system', 'Connected as ' + chatNodeId);
+  chatWs.onmessage = (e) => {
+    try {
+      const d = JSON.parse(e.data);
+      if (d.event === 'message') appendChat(d.data.from, d.data.content);
+      if (d.event === 'ack') {} // silent
+    } catch {}
+  };
+  chatWs.onclose = () => { appendChat('system', 'Disconnected. Reconnecting...'); setTimeout(connectChat, 2000); };
+}
+
+function appendChat(from, text) {
+  if (!chatLog) return;
+  const t = new Date().toLocaleTimeString().slice(0,5);
+  const cls = from === 'system' ? 'color:#666;font-style:italic' : from === chatNodeId ? 'color:#22c55e' : 'color:#60a5fa';
+  chatLog.innerHTML += '<div style="padding:2px 0"><span style="color:#555;font-size:11px">['+t+']</span> <span style="'+cls+';font-weight:600;font-size:12px">'+from+'</span>: <span style="color:#ddd;font-size:13px">'+text+'</span></div>';
+  chatLog.scrollTop = chatLog.scrollHeight;
+}
+
+function sendChat() {
+  const input = document.getElementById('chat-input');
+  const to = document.getElementById('chat-to');
+  if (!input || !to || !input.value.trim()) return;
+  const msg = {
+    id: 'dash-'+Date.now()+'-'+Math.random().toString(36).slice(2,5),
+    from: chatNodeId, to: to.value, content: input.value.trim(),
+    type: 'human', ts: Date.now(), signature: '', encrypted: false
+  };
+  if (chatWs && chatWs.readyState === 1) {
+    chatWs.send(JSON.stringify(msg));
+    appendChat(chatNodeId, input.value.trim());
+  }
+  input.value = '';
+}
+
+document.getElementById('chat-input')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendChat(); });
+connectChat();
 </script>
 </body>
 </html>

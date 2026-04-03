@@ -44,6 +44,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
   <h1>JackClaw Dashboard</h1>
   <span id="hub-badge" class="badge">Connecting...</span>
   <a href="/app/" style="margin-left:auto;color:#22c55e;font-size:13px;text-decoration:none">📱 Install App</a>
+  <a href="/react/" style="margin-left:8px;color:#60a5fa;font-size:13px;text-decoration:none">⚛️ React Dashboard</a>
   <span style="color:#555;font-size:13px;margin-left:12px" id="hub-url"></span>
 </div>
 <div class="refresh-bar">Auto-refresh every 5s · <span id="last-refresh">—</span></div>
@@ -141,9 +142,20 @@ async function refresh() {
   } else {
     nodeList.innerHTML = nodeArr.map(n => {
       const ago = n.lastReportAt ? Math.round((Date.now() - n.lastReportAt) / 60000) + 'm ago' : 'never';
-      return '<li class="node-item"><div class="node-dot"></div><div><div class="node-name">' +
+      let healthHtml = '';
+      if (n.health) {
+        const memMB = (n.health.memUsage / 1024 / 1024).toFixed(1);
+        const uptimeH = (n.health.uptime / 3600).toFixed(1);
+        const dotColor = n.health.status === 'online' ? '#22c55e' : '#ef4444';
+        healthHtml = '<div style="font-size:11px;color:#888;margin-top:4px">' +
+          '<span style="color:' + dotColor + '">●</span> ' + n.health.status +
+          ' · Mem: <b style="color:#60a5fa">' + memMB + ' MB</b>' +
+          ' · Up: <b style="color:#a78bfa">' + uptimeH + ' h</b>' +
+          '</div>';
+      }
+      return '<li class="node-item"><div class="node-dot' + (n.health && n.health.status === 'offline' ? ' offline' : '') + '"></div><div><div class="node-name">' +
         n.name + '</div><div class="node-role">' + n.role + ' · ' + n.nodeId.slice(0,12) +
-        '</div></div><div class="node-meta">Last report: ' + ago + '</div></li>';
+        '</div>' + healthHtml + '</div><div class="node-meta">Last report: ' + ago + '</div></li>';
     }).join('');
   }
 

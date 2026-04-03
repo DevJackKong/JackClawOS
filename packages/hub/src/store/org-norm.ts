@@ -1,74 +1,105 @@
 /**
- * OrgNorm — CEO 设置全局规范，所有 Node system prompt 自动注入
- * 类似"公司工作手册"，但自动执行
+ * OrgNorm — 团队规范持久化存储
+ * 持久化到 ~/.jackclaw/org/norms.json
  */
-
-import { randomUUID } from 'crypto'
+import fs from 'fs'
+import path from 'path'
+import os from 'os'
+import crypto from 'crypto'
 
 export interface OrgNorm {
   id: string
-  rule: string
-  scope: 'all' | 'ceo' | 'manager' | 'worker'
-  enabled: boolean
+  title: string
+  content: string
+  category: string   // 'code' | 'communication' | 'process' | 'other'
+  author: string
   createdAt: number
-  createdBy: string
+  updatedAt: number
 }
 
-const ROLE_HIERARCHY: Record<string, string[]> = {
-  ceo: ['ceo'],
-  manager: ['manager'],
-  worker: ['worker'],
-  all: ['ceo', 'manager', 'worker'],
-}
+const STORE_DIR = path.join(os.homedir(), '.jackclaw', 'org')
+const STORE_FILE = path.join(STORE_DIR, 'norms.json')
 
 export class OrgNormStore {
   private norms: OrgNorm[] = []
 
-  add(rule: string, scope: OrgNorm['scope'], createdBy: string): OrgNorm {
-    const norm: OrgNorm = {
-      id: randomUUID(),
-      rule,
-      scope,
-      enabled: true,
-      createdAt: Date.now(),
-      createdBy,
-    }
-    this.norms.push(norm)
-    return norm
+  constructor() {
+    this.load()
   }
 
-  disable(id: string): void {
-    const norm = this.norms.find(n => n.id === id)
-    if (norm) norm.enabled = false
-  }
-
-  /** 返回对指定角色生效的所有启用规范 */
-  getActive(role: string): OrgNorm[] {
-    const lowerRole = role.toLowerCase()
-    return this.norms.filter(n => {
-      if (!n.enabled) return false
-      if (n.scope === 'all') return true
-      return n.scope === lowerRole
-    })
-  }
-
+  /** Return all norms */
   list(): OrgNorm[] {
     return [...this.norms]
   }
 
-  /**
-   * 构建注入到 system prompt 的字符串块。
-   * 例：
-   *   ORGANIZATION NORMS:
-   *   - 代码必须有测试
-   *   - 不直接修改 main 分支
-   */
-  buildSystemPromptInject(role: string): string {
-    const active = this.getActive(role)
-    if (active.length === 0) return ''
+  /** Get single norm by id */
+  get(id: string): OrgNorm | undefined {
+    return this.norms.find(n => n.id === id)
+  }
 
-    const lines = active.map(n => `- ${n.rule}`).join('\n')
+  /** Add a new norm */
+  add(input: { title: string; content: string; category?: string; author?: string }): OrgNorm {
+    const validCategories = ['code', 'communication', 'process', 'other']
+    const norm: OrgNorm = {
+      id: crypto.randomUUID(),
+      title: input.title,
+      content: input.content,
+      category: (input.category && validCategories.includes(input.category)) ? input.category : 'other',
+      author: input.author || 'unknown',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    }
+    this.norms.push(norm)
+    this.flush()
+    return norm
+  }
+
+  /** Update an existing norm, returns updated norm or undefined */
+  update(id: string, fields: Partial<Pick<OrgNorm, 'title' | 'content' | 'category' | 'author'>>): OrgNorm | undefined {
+    const norm = this.norms.find(n => n.id === id)
+    if (!norm) return undefined
+    if (fields.title !== undefined) norm.title = fields.title
+    if (fields.content !== undefined) norm.content = fields.content
+    if (fields.category !== undefined) norm.category = fields.category
+    if (fields.author !== undefined) norm.author = fields.author
+    norm.updatedAt = Date.now()
+    this.flush()
+    return norm
+  }
+
+  /** Delete norm by id, returns true if found */
+  delete(id: string): boolean {
+    const idx = this.norms.findIndex(n => n.id === id)
+    if (idx === -1) return false
+    this.norms.splice(idx, 1)
+    this.flush()
+    return true
+  }
+
+  /**
+   * Legacy compat: build system prompt inject from norms
+   * Maps old scope-based filtering to category-based listing
+   */
+  buildSystemPromptInject(_role?: string): string {
+    if (this.norms.length === 0) return ''
+    const lines = this.norms.map(n => `- [${n.category}] ${n.title}: ${n.content}`).join('\n')
     return `ORGANIZATION NORMS:\n${lines}`
+  }
+
+  private load() {
+    try {
+      fs.mkdirSync(STORE_DIR, { recursive: true })
+      const raw = fs.readFileSync(STORE_FILE, 'utf-8')
+      const data = JSON.parse(raw)
+      if (Array.isArray(data)) this.norms = data
+    } catch {
+      // file doesn't exist or invalid — start fresh
+    }
+  }
+
+  private flush() {
+    fs.mkdirSync(STORE_DIR, { recursive: true })
+    fs.writeFileSync(STORE_FILE, JSON.stringify(this.norms, null, 2))
   }
 }
 

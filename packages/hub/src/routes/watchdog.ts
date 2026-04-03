@@ -1,6 +1,9 @@
 /**
  * Watchdog Hub Routes
  *
+ * POST /api/watchdog/heartbeat       — 节点心跳上报（健康指标）
+ * GET  /api/watchdog/status          — 所有节点健康状态
+ * GET  /api/watchdog/status/:nodeId  — 单节点健康状态
  * POST /api/watchdog/policy       — 添加监督策略（需要 target 节点授权签名）
  * GET  /api/watchdog/alerts/:nodeId — 查询告警
  * POST /api/watchdog/ack/:eventId  — 真人确认告警（需要特殊 human-token）
@@ -23,6 +26,75 @@ import {
 } from '@jackclaw/watchdog'
 
 const router = Router()
+
+// ─── Heartbeat Health Monitor (in-memory) ─────────────────────────────────────
+
+interface HeartbeatMetrics {
+  memUsage: number
+  cpuLoad: number
+  uptime: number
+  tasksCompleted: number
+  lastTaskAt: number
+}
+
+interface WatchdogEntry {
+  nodeId: string
+  status: 'online' | 'offline'
+  lastHeartbeat: number
+  metrics: HeartbeatMetrics
+}
+
+const OFFLINE_THRESHOLD_MS = 90_000
+const heartbeatStore = new Map<string, WatchdogEntry>()
+
+function resolveStatus(entry: WatchdogEntry): WatchdogEntry {
+  const now = Date.now()
+  return {
+    ...entry,
+    status: now - entry.lastHeartbeat > OFFLINE_THRESHOLD_MS ? 'offline' : 'online',
+  }
+}
+
+// ─── POST /api/watchdog/heartbeat ─────────────────────────────────────────────
+
+router.post('/heartbeat', (req: Request, res: Response): void => {
+  const { nodeId, metrics } = req.body as { nodeId?: string; metrics?: HeartbeatMetrics }
+
+  if (!nodeId || !metrics) {
+    res.status(400).json({ error: 'nodeId and metrics required' })
+    return
+  }
+
+  heartbeatStore.set(nodeId, {
+    nodeId,
+    status: 'online',
+    lastHeartbeat: Date.now(),
+    metrics,
+  })
+
+  res.json({ ok: true })
+})
+
+// ─── GET /api/watchdog/status ─────────────────────────────────────────────────
+
+router.get('/status', (_req: Request, res: Response): void => {
+  const nodes: Record<string, WatchdogEntry> = {}
+  for (const [id, entry] of heartbeatStore) {
+    nodes[id] = resolveStatus(entry)
+  }
+  res.json({ nodes })
+})
+
+// ─── GET /api/watchdog/status/:nodeId ─────────────────────────────────────────
+
+router.get('/status/:nodeId', (req: Request, res: Response): void => {
+  const entry = heartbeatStore.get(req.params.nodeId)
+  if (!entry) {
+    res.status(404).json({ error: `No heartbeat data for node ${req.params.nodeId}` })
+    return
+  }
+  res.json(resolveStatus(entry))
+})
 
 // ─── Middleware: human-token guard ────────────────────────────────────────────
 
@@ -132,5 +204,9 @@ router.get('/snapshot/:nodeId', (req: Request, res: Response): void => {
 
   res.json(snapshot)
 })
+
+// Export heartbeatStore for dashboard merge
+export { heartbeatStore, resolveStatus }
+export type { WatchdogEntry }
 
 export default router

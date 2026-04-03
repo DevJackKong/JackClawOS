@@ -10,6 +10,9 @@ import { mentionCommand, identityCommand, sessionsCommand } from './commands/ide
 import { registerStartCommand } from './commands/start';
 import { registerChatCommand } from './commands/chat';
 import { registerDemo } from './commands/demo';
+import { registerAsk } from './commands/ask.js';
+import { registerProviders } from './commands/providers.js';
+import { registerLogs } from './commands/logs.js';
 
 const program = new Command();
 
@@ -30,5 +33,8 @@ sessionsCommand(program);
 registerStartCommand(program);
 registerChatCommand(program);
 registerDemo(program);
+registerAsk(program);
+registerProviders(program);
+registerLogs(program);
 
 program.parse(process.argv);

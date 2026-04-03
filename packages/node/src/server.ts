@@ -208,6 +208,31 @@ export function createServer(identity: NodeIdentity, config: JackClawConfig) {  
     res.json({ recommendation: stats.recommendation, retryTuning })
   })
 
+  // ── Watchdog Heartbeat (every 60s) ────────────────────────────────────────────
+  const hubUrl = config.hubUrl
+  if (hubUrl) {
+    const heartbeatInterval = setInterval(() => {
+      const metrics = {
+        memUsage: process.memoryUsage().heapUsed,
+        uptime: process.uptime(),
+        cpuLoad: 0,
+        tasksCompleted: 0,
+        lastTaskAt: Date.now(),
+      }
+      const body = JSON.stringify({ nodeId: identity.nodeId, metrics })
+      const url = new URL('/api/watchdog/heartbeat', hubUrl)
+      const mod = url.protocol === 'https:' ? require('https') : require('http')
+      const req = mod.request(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+      }, (res: any) => { res.resume() })
+      req.on('error', () => { /* silent — hub may be down */ })
+      req.end(body)
+    }, 60_000)
+    // Prevent timer from keeping process alive
+    heartbeatInterval.unref()
+  }
+
   // ── Error handler ───────────────────────────────────────────────────────────
   app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
     console.error('[server] Unhandled error:', err.message)

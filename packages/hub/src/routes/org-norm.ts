@@ -1,7 +1,8 @@
 // Hub routes — OrgNorm API
-// GET    /api/org-norm          — 列出所有规范
-// POST   /api/org-norm          — 添加规范（CEO only）
-// DELETE /api/org-norm/:id      — 禁用规范（CEO only）
+// GET    /api/org-norm          — 所有规范
+// POST   /api/org-norm          — 新增规范
+// PUT    /api/org-norm/:id      — 更新规范
+// DELETE /api/org-norm/:id      — 删除规范
 
 import { Router, Request, Response } from 'express'
 import { getOrgNormStore } from '../store/org-norm'
@@ -11,55 +12,76 @@ const store = getOrgNormStore()
 
 /**
  * GET /api/org-norm
- * 可选 ?role=worker 按角色过滤（返回对该角色生效的启用规范）
+ * Returns: { norms: OrgNorm[] }
  */
-router.get('/', (req: Request, res: Response): void => {
-  const { role } = req.query
-  if (role && typeof role === 'string') {
-    res.json({ norms: store.getActive(role) })
-  } else {
-    res.json({ norms: store.list() })
-  }
+router.get('/', (_req: Request, res: Response): void => {
+  res.json({ norms: store.list() })
 })
 
 /**
  * POST /api/org-norm
- * Body: { rule: string, scope: 'all'|'ceo'|'manager'|'worker' }
- * CEO only（JWT role 检查）
+ * Body: { title, content, category?, author? }
+ * Returns: 201 { norm }
  */
 router.post('/', (req: Request, res: Response): void => {
+  const { title, content, category, author } = req.body as {
+    title?: string
+    content?: string
+    category?: string
+    author?: string
+  }
+
+  if (!title || typeof title !== 'string' || title.trim() === '') {
+    res.status(400).json({ error: 'title is required' })
+    return
+  }
+  if (!content || typeof content !== 'string' || content.trim() === '') {
+    res.status(400).json({ error: 'content is required' })
+    return
+  }
+
   const jwtPayload = req.jwtPayload
-  if (!jwtPayload || jwtPayload.role !== 'ceo') {
-    res.status(403).json({ error: 'Only CEO can create org norms' })
-    return
-  }
+  const resolvedAuthor = author || jwtPayload?.nodeId || 'unknown'
 
-  const { rule, scope } = req.body as { rule?: string; scope?: string }
-  if (!rule || typeof rule !== 'string' || rule.trim() === '') {
-    res.status(400).json({ error: 'rule is required' })
-    return
-  }
-
-  const validScopes = ['all', 'ceo', 'manager', 'worker']
-  const normScope = (scope && validScopes.includes(scope) ? scope : 'all') as
-    'all' | 'ceo' | 'manager' | 'worker'
-
-  const norm = store.add(rule.trim(), normScope, jwtPayload.nodeId)
+  const norm = store.add({
+    title: title.trim(),
+    content: content.trim(),
+    category,
+    author: resolvedAuthor,
+  })
   res.status(201).json({ norm })
 })
 
 /**
- * DELETE /api/org-norm/:id
- * 禁用规范（软删除）— CEO only
+ * PUT /api/org-norm/:id
+ * Body: { title?, content?, category?, author? }
+ * Returns: { norm }
  */
-router.delete('/:id', (req: Request, res: Response): void => {
-  const jwtPayload = req.jwtPayload
-  if (!jwtPayload || jwtPayload.role !== 'ceo') {
-    res.status(403).json({ error: 'Only CEO can disable org norms' })
-    return
+router.put('/:id', (req: Request, res: Response): void => {
+  const { title, content, category, author } = req.body as {
+    title?: string
+    content?: string
+    category?: string
+    author?: string
   }
 
-  store.disable(req.params.id)
+  const norm = store.update(req.params.id, { title, content, category, author })
+  if (!norm) {
+    res.status(404).json({ error: 'Norm not found' })
+    return
+  }
+  res.json({ norm })
+})
+
+/**
+ * DELETE /api/org-norm/:id
+ */
+router.delete('/:id', (req: Request, res: Response): void => {
+  const found = store.delete(req.params.id)
+  if (!found) {
+    res.status(404).json({ error: 'Norm not found' })
+    return
+  }
   res.json({ ok: true })
 })
 

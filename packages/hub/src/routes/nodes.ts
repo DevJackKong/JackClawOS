@@ -7,6 +7,7 @@ import { getAllNodes } from '../store/nodes'
 import { getLastReportEntry } from '../store/reports'
 import { getAlerts, getLatestSnapshot } from '@jackclaw/watchdog'
 import { getWorkload, setWorkload, WorkloadSnapshot } from '../store/workload-cache'
+import { heartbeatStore, resolveStatus } from './watchdog'
 
 const router = Router()
 
@@ -25,6 +26,9 @@ router.get('/', (req: Request, res: Response): void => {
     const unackedAlerts = getAlerts(node.nodeId, { acknowledged: false })
     const snapshot = getLatestSnapshot(node.nodeId)
 
+    const hb = heartbeatStore.get(node.nodeId)
+    const healthMetrics = hb ? resolveStatus(hb) : null
+
     return {
       nodeId: node.nodeId,
       name: node.name,
@@ -38,6 +42,15 @@ router.get('/', (req: Request, res: Response): void => {
         lastSnapshotAt: snapshot?.timestamp ?? null,
         memoryHash: snapshot?.memoryHash ?? null,
       },
+      health: healthMetrics ? {
+        status: healthMetrics.status,
+        lastHeartbeat: healthMetrics.lastHeartbeat,
+        memUsage: healthMetrics.metrics.memUsage,
+        cpuLoad: healthMetrics.metrics.cpuLoad,
+        uptime: healthMetrics.metrics.uptime,
+        tasksCompleted: healthMetrics.metrics.tasksCompleted,
+        lastTaskAt: healthMetrics.metrics.lastTaskAt,
+      } : null,
       workload: getWorkload(node.nodeId),
     }
   })

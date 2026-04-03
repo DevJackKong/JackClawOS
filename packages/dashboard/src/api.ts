@@ -1,6 +1,9 @@
 // Hub API client — wraps all REST endpoints for JackClaw Hub
 
-const BASE = 'http://localhost:3100';
+const BASE =
+  typeof window !== 'undefined'
+    ? `${window.location.protocol}//${window.location.hostname}:3100`
+    : 'http://localhost:3100';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -68,6 +71,7 @@ export interface SendMessageRequest {
   nodeId: string;
   content: string;
   threadId?: string;
+  type?: 'human' | 'task' | 'ask';
 }
 
 export interface SendMessageResponse {
@@ -82,6 +86,37 @@ export interface TokenStatsResponse {
   hitRate: number;
   savedTokens: number;
   byNode?: Record<string, { tokens: number; cacheHits: number }>;
+}
+
+export interface PlanEstimateRequest {
+  title: string;
+  description: string;
+  nodeId?: string;
+  useAi?: boolean;
+}
+
+export interface ExecutionPlan {
+  taskId: string;
+  title: string;
+  complexity: 'trivial' | 'simple' | 'moderate' | 'complex' | 'epic';
+  estimatedMinutesSerial: number;
+  estimatedMinutesParallel: number;
+  parallelSpeedup: number;
+  estimatedTotalTokens: number;
+  estimatedCostUsd: number;
+  needsParallel: boolean;
+  suggestedAgentCount: number;
+  subtasks: Array<{ id: string; title: string; estimatedMinutes: number; dependencies?: string[] }>;
+  parallelBatches: Array<Array<string>>;
+  overallRisk: string;
+  risks: string[];
+  plannerVersion: string;
+  plannedAt: number;
+}
+
+export interface PlanEstimateResponse {
+  plan: ExecutionPlan;
+  note?: string;
 }
 
 // ── Auth helper ──────────────────────────────────────────────────────────────
@@ -130,8 +165,20 @@ export const api = {
       req(`${BASE}/api/chat/thread/${encodeURIComponent(id)}`, {
         headers: authHeaders(token),
       }),
+
+    inbox: (token: string, nodeId: string): Promise<{ messages: ChatMessage[] }> =>
+      req(`${BASE}/api/chat/inbox?nodeId=${encodeURIComponent(nodeId)}`, {
+        headers: authHeaders(token),
+      }),
   },
 
   stats: (token: string): Promise<TokenStatsResponse> =>
     req(`${BASE}/api/stats/tokens`, { headers: authHeaders(token) }),
+
+  plan: (token: string, body: PlanEstimateRequest): Promise<PlanEstimateResponse> =>
+    req(`${BASE}/api/plan/estimate`, {
+      method: 'POST',
+      headers: authHeaders(token),
+      body: JSON.stringify(body),
+    }),
 };

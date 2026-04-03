@@ -18,9 +18,14 @@ function timeAgo(ts?: number): string {
   return `${Math.floor(h / 24)} 天前`;
 }
 
-function isOnline(lastReportAt?: number): boolean {
-  if (!lastReportAt) return false;
-  return Date.now() - lastReportAt < 10 * 60 * 1000;
+type NodeStatus = 'online' | 'recent' | 'offline';
+
+function nodeStatus(lastReportAt?: number): NodeStatus {
+  if (!lastReportAt) return 'offline';
+  const diff = Date.now() - lastReportAt;
+  if (diff < 60 * 60 * 1000) return 'online';       // < 1h → green
+  if (diff < 24 * 60 * 60 * 1000) return 'recent';  // < 24h → yellow
+  return 'offline';                                  // > 24h → gray
 }
 
 function fmtDate(ts?: number): string {
@@ -86,7 +91,7 @@ export const NodeList: React.FC<Props> = ({ token }) => {
     return <div className="empty-state">暂无已注册节点</div>;
   }
 
-  const online = nodes.filter(n => isOnline(n.lastReportAt)).length;
+  const online = nodes.filter(n => nodeStatus(n.lastReportAt) === 'online').length;
 
   return (
     <div className="node-list">
@@ -99,12 +104,12 @@ export const NodeList: React.FC<Props> = ({ token }) => {
       </div>
       <div className="nodes-grid">
         {nodes.map(node => {
-          const live = isOnline(node.lastReportAt);
+          const status = nodeStatus(node.lastReportAt);
           return (
-            <div key={node.nodeId} className={`node-card ${live ? 'node-online' : 'node-offline'}`}>
+            <div key={node.nodeId} className={`node-card node-${status}`}>
               <div className="node-card-top">
                 <div className="node-status-indicator">
-                  <span className={`status-dot ${live ? 'dot-live' : 'dot-dead'}`} />
+                  <span className={`status-dot dot-${status}`} />
                 </div>
                 <div className="node-name">{node.name}</div>
                 <div

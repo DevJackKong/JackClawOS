@@ -9,6 +9,8 @@ interface Props {
   nodeId: string | null;
 }
 
+type MsgType = 'human' | 'task' | 'ask';
+
 function fmtTime(ts: number): string {
   return new Date(ts).toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit' });
 }
@@ -45,6 +47,7 @@ export const ChatPanel: React.FC<Props> = ({ token, nodeId }) => {
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [histMessages, setHistMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
+  const [msgType, setMsgType] = useState<MsgType>('human');
   const [loadingThread, setLoadingThread] = useState(false);
   const [sending, setSending] = useState(false);
 

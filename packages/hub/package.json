@@ -13,6 +13,8 @@
   "dependencies": {
     "@jackclaw/protocol": "^0.1.0",
     "@jackclaw/watchdog": "*",
+    "@jackclaw/memory": "*",
+    "@jackclaw/payment-vault": "*",
     "express": "^4.18.2",
     "jsonwebtoken": "^9.0.2",
     "express-rate-limit": "^7.2.0",

@@ -1,0 +1,21 @@
+{
+  "name": "@jackclaw/payment-vault",
+  "version": "0.1.0",
+  "description": "JackClaw Payment Vault — isolated compliance-first payment engine",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@jackclaw/protocol": "^0.1.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "@types/node": "^20.0.0"
+  },
+  "files": ["dist"],
+  "license": "UNLICENSED",
+  "private": true
+}

@@ -12,13 +12,13 @@ function levenshteinDistance(a: string, b: string): number {
   for (let i = 1; i <= m; i++) {
     for (let j = 1; j <= n; j++) {
       if (a[i - 1] === b[j - 1]) {
-        dp[i][j] = dp[i - 1][j - 1]
+        dp[i]![j] = dp[i - 1]![j - 1]!
       } else {
-        dp[i][j] = 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1])
+        dp[i]![j] = 1 + Math.min(dp[i - 1]![j]!, dp[i]![j - 1]!, dp[i - 1]![j - 1]!)
       }
     }
   }
-  return dp[m][n]
+  return dp[m]![n]!
 }
 
 /** 0-1 相似度（1 = 完全相同） */

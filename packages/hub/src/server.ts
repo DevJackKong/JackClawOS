@@ -17,6 +17,7 @@ import memoryRoute from './routes/memory'
 import directoryRoute from './routes/directory'
 import watchdogRoute from './routes/watchdog'
 import humanReviewRoute from './routes/human-review'
+import paymentRoute from './routes/payment'
 import { JWTPayload } from './types'
 
 // ─── Hub Configuration ────────────────────────────────────────────────────────
@@ -141,6 +142,7 @@ export function createServer(): Application {
   app.use('/api', directoryRoute)  // collab/* routes also under /api
   app.use('/api/watchdog', watchdogRoute)
   app.use('/api/review', humanReviewRoute)
+  app.use('/api/payment', paymentRoute)
 
   // 404 handler
   app.use((_req: Request, res: Response) => {

@@ -1,5 +1,13 @@
 # JackClaw
 
+## What makes JackClaw different
+
+1. **Human-in-the-Loop by design** — Every high-stakes action (payments, deployments, deletions) requires cryptographic human approval via HMAC tokens. AI agents can never bypass the human gate.
+2. **Jurisdiction-aware compliance engine** — Built-in multi-region payment rules (CN/EU/US/HK/SG) with auto-approve thresholds, KYC requirements, and daily limits — not bolted on, but core to the protocol.
+3. **Isolated security domains** — Watchdog, Payment Vault, and Memory operate in separate storage with append-only audit logs (chmod 444). Compromising one domain cannot affect others.
+4. **End-to-end encrypted agent mesh** — All inter-node communication uses RSA-2048 + AES-256-GCM hybrid encryption with signed messages. The Hub never sees plaintext agent data.
+5. **Zero-trust agent architecture** — Trust scores, autonomy levels (L0-L3), and supervision policies are enforced at the protocol layer. No agent gets implicit trust.
+
 > 让每一位 CEO 都能通过 AI 做得更好，推动人类文明到达新的高度。
 
 **分布式 AI 组织协作框架** — 基于 OpenClaw 生态，完全开源。

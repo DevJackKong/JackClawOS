@@ -70,7 +70,6 @@ export function createCollabSession(opts: {
         updatedAt: Date.now(),
         source: opts.agentId,
         ...partial,
-        id: nanoid(),
       }
       sandbox.push(entry)
       return entry

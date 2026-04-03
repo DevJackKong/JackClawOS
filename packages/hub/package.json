@@ -1,0 +1,29 @@
+{
+  "name": "@jackclaw/hub",
+  "version": "0.1.0",
+  "description": "JackClaw Hub - CEO central node for receiving agent reports",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "ts-node src/index.ts",
+    "start": "node dist/index.js",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@jackclaw/protocol": "^0.1.0",
+    "@jackclaw/watchdog": "*",
+    "express": "^4.18.2",
+    "jsonwebtoken": "^9.0.2",
+    "express-rate-limit": "^7.2.0",
+    "morgan": "^1.10.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "@types/node": "^20.0.0",
+    "@types/express": "^4.17.21",
+    "@types/jsonwebtoken": "^9.0.6",
+    "@types/morgan": "^1.9.9",
+    "ts-node": "^10.9.2"
+  }
+}

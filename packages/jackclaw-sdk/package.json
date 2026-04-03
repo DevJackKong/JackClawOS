@@ -1,0 +1,28 @@
+{
+  "name": "@jackclaw/sdk",
+  "version": "0.1.0",
+  "description": "JackClaw Plugin Development SDK",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.4.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "keywords": ["jackclaw", "sdk", "plugin", "node"],
+  "license": "MIT"
+}

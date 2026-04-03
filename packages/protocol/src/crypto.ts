@@ -1,0 +1,120 @@
+import {
+  generateKeyPairSync,
+  createSign,
+  createVerify,
+  publicEncrypt,
+  privateDecrypt,
+  randomBytes,
+  createCipheriv,
+  createDecipheriv,
+  constants,
+} from 'crypto'
+import type { KeyPair, EncryptedPayload } from './types'
+
+const RSA_KEY_BITS = 2048
+const AES_ALGO = 'aes-256-gcm' as const
+const AES_KEY_BYTES = 32
+const IV_BYTES = 16
+const SIGN_ALGO = 'SHA256'
+
+// ── Key Pair ──────────────────────────────────────────────────────────────────
+
+/**
+ * Generate a new RSA-2048 key pair.
+ * Returns PEM-encoded public + private keys.
+ */
+export function generateKeyPair(): KeyPair {
+  const { publicKey, privateKey } = generateKeyPairSync('rsa', {
+    modulusLength: RSA_KEY_BITS,
+    publicKeyEncoding: { type: 'pkcs1', format: 'pem' },
+    privateKeyEncoding: { type: 'pkcs1', format: 'pem' },
+  })
+  return { publicKey, privateKey }
+}
+
+// ── Encryption ────────────────────────────────────────────────────────────────
+
+/**
+ * Encrypt plaintext for a recipient using their RSA public key.
+ * Hybrid encryption: AES-256-GCM for data, RSA-OAEP for key wrapping.
+ */
+export function encrypt(plaintext: string, recipientPublicKeyPem: string): EncryptedPayload {
+  // 1. Generate random AES key + IV
+  const aesKey = randomBytes(AES_KEY_BYTES)
+  const iv = randomBytes(IV_BYTES)
+
+  // 2. Encrypt plaintext with AES-256-GCM
+  const cipher = createCipheriv(AES_ALGO, aesKey, iv)
+  const encrypted = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()])
+  const authTag = cipher.getAuthTag()
+
+  // 3. Wrap AES key with recipient's RSA public key (OAEP + SHA-256)
+  const encryptedKey = publicEncrypt(
+    {
+      key: recipientPublicKeyPem,
+      padding: constants.RSA_PKCS1_OAEP_PADDING,
+      oaepHash: 'sha256',
+    },
+    aesKey,
+  )
+
+  return {
+    encryptedKey: encryptedKey.toString('base64'),
+    iv: iv.toString('base64'),
+    ciphertext: encrypted.toString('base64'),
+    authTag: authTag.toString('base64'),
+  }
+}
+
+/**
+ * Decrypt an EncryptedPayload using the recipient's RSA private key.
+ */
+export function decrypt(payload: EncryptedPayload, recipientPrivateKeyPem: string): string {
+  // 1. Unwrap AES key
+  const encryptedKey = Buffer.from(payload.encryptedKey, 'base64')
+  const aesKey = privateDecrypt(
+    {
+      key: recipientPrivateKeyPem,
+      padding: constants.RSA_PKCS1_OAEP_PADDING,
+      oaepHash: 'sha256',
+    },
+    encryptedKey,
+  )
+
+  // 2. Decrypt ciphertext
+  const iv = Buffer.from(payload.iv, 'base64')
+  const ciphertext = Buffer.from(payload.ciphertext, 'base64')
+  const authTag = Buffer.from(payload.authTag, 'base64')
+
+  const decipher = createDecipheriv(AES_ALGO, aesKey, iv)
+  decipher.setAuthTag(authTag)
+
+  const decrypted = Buffer.concat([decipher.update(ciphertext), decipher.final()])
+  return decrypted.toString('utf8')
+}
+
+// ── Signing ───────────────────────────────────────────────────────────────────
+
+/**
+ * Sign data with sender's RSA private key. Returns base64 signature.
+ */
+export function sign(data: string, senderPrivateKeyPem: string): string {
+  const signer = createSign(SIGN_ALGO)
+  signer.update(data, 'utf8')
+  signer.end()
+  return signer.sign(senderPrivateKeyPem, 'base64')
+}
+
+/**
+ * Verify a signature against sender's RSA public key.
+ */
+export function verify(data: string, signature: string, senderPublicKeyPem: string): boolean {
+  try {
+    const verifier = createVerify(SIGN_ALGO)
+    verifier.update(data, 'utf8')
+    verifier.end()
+    return verifier.verify(senderPublicKeyPem, signature, 'base64')
+  } catch {
+    return false
+  }
+}

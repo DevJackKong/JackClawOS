@@ -1,0 +1,21 @@
+{
+  "name": "@jackclaw/watchdog",
+  "version": "0.1.0",
+  "description": "JackClaw Watchdog — isolated human-only oversight layer",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "ts-node src/index.ts",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "^5.3.3",
+    "ts-node": "^10.9.2",
+    "@types/node": "^20.11.0"
+  },
+  "files": ["dist"],
+  "license": "UNLICENSED",
+  "private": true
+}

@@ -1,0 +1,80 @@
+import express, { Request, Response, NextFunction } from 'express'
+import { openMessage, decrypt } from '@jackclaw/protocol'
+import type { NodeIdentity, JackClawMessage, TaskPayload, EncryptedPayload } from '@jackclaw/protocol'
+import type { JackClawConfig } from './config'
+
+export function createServer(identity: NodeIdentity, config: JackClawConfig) {
+  const app = express()
+  app.use(express.json({ limit: '1mb' }))
+
+  // ── Health check ────────────────────────────────────────────────────────────
+  app.get('/health', (_req: Request, res: Response) => {
+    res.json({ status: 'ok', nodeId: identity.nodeId, ts: Date.now() })
+  })
+
+  // ── Receive task from Hub ───────────────────────────────────────────────────
+  app.post('/api/task', (req: Request, res: Response) => {
+    if (!config.visibility.shareTasks) {
+      res.status(403).json({ error: 'Task acceptance disabled by node config' })
+      return
+    }
+
+    const msg = req.body as JackClawMessage
+
+    if (!msg || !msg.payload || !msg.signature) {
+      res.status(400).json({ error: 'Invalid message format' })
+      return
+    }
+
+    // Hub must identify itself; for now we trust messages from 'hub'
+    // In production, store Hub's public key in config
+    const hubPublicKey: string | undefined = (config as any).hubPublicKey
+    if (!hubPublicKey) {
+      // Accept without verification if Hub key not configured (dev mode)
+      console.warn('[server] Hub public key not configured — skipping signature verification')
+      try {
+        const raw: EncryptedPayload = JSON.parse(msg.payload)
+        const plaintext: string = decrypt(raw, identity.privateKey)
+        const task = JSON.parse(plaintext) as TaskPayload
+        console.log(`[server] Received task: ${task.taskId} — ${task.action}`)
+        handleTask(task)
+        res.json({ status: 'accepted', taskId: task.taskId })
+      } catch (err: any) {
+        console.error('[server] Failed to process task:', err.message)
+        res.status(422).json({ error: 'Failed to process task' })
+      }
+      return
+    }
+
+    // Verified path
+    try {
+      const task = openMessage<TaskPayload>(msg, hubPublicKey, identity.privateKey)
+      console.log(`[server] Received verified task: ${task.taskId} — ${task.action}`)
+      handleTask(task)
+      res.json({ status: 'accepted', taskId: task.taskId })
+    } catch (err: any) {
+      console.error('[server] Task verification/decryption failed:', err.message)
+      res.status(422).json({ error: 'Failed to verify or decrypt task' })
+    }
+  })
+
+  // ── Ping ────────────────────────────────────────────────────────────────────
+  app.post('/api/ping', (_req: Request, res: Response) => {
+    res.json({ pong: true, nodeId: identity.nodeId, ts: Date.now() })
+  })
+
+  // ── Error handler ───────────────────────────────────────────────────────────
+  app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
+    console.error('[server] Unhandled error:', err.message)
+    res.status(500).json({ error: 'Internal server error' })
+  })
+
+  return app
+}
+
+function handleTask(task: TaskPayload): void {
+  // Extensible task dispatcher
+  console.log(`[task] Handling task ${task.taskId}: ${task.action}`, task.params)
+  // Future: dispatch to task handlers based on task.action
+}
+

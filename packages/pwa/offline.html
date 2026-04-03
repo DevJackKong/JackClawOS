@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JackClaw - 离线</title>
+<meta name="theme-color" content="#6366f1">
+<style>
+  body {
+    background: #0d0d0f; color: #e2e4e9;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    display: flex; align-items: center; justify-content: center;
+    min-height: 100vh; margin: 0; text-align: center; padding: 20px;
+  }
+  .container { max-width: 320px; }
+  .icon { font-size: 64px; margin-bottom: 20px; }
+  h1 { font-size: 22px; margin: 0 0 10px; color: #6366f1; }
+  p { color: #6b7280; font-size: 15px; line-height: 1.6; }
+  button {
+    margin-top: 24px; padding: 12px 28px;
+    background: #6366f1; color: #fff;
+    border: none; border-radius: 8px;
+    font-size: 15px; font-weight: 600; cursor: pointer;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="icon">📴</div>
+  <h1>当前离线</h1>
+  <p>无法连接到 JackClaw Hub。<br>已缓存的数据仍可查看。</p>
+  <button onclick="window.location.reload()">重新连接</button>
+</div>
+</body>
+</html>

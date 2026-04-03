@@ -1,0 +1,27 @@
+{
+  "name": "@jackclaw/node",
+  "version": "0.1.0",
+  "description": "JackClaw node agent — registers to Hub, reports daily, receives tasks",
+  "main": "dist/src/index.js",
+  "types": "dist/src/index.d.ts",
+  "bin": {
+    "jackclaw-node": "dist/src/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "ts-node src/index.ts",
+    "start": "node dist/src/index.js"
+  },
+  "dependencies": {
+    "@jackclaw/protocol": "*",
+    "express": "^4.19.0",
+    "node-cron": "^3.0.3",
+    "axios": "^1.6.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "@types/node": "^20.0.0",
+    "@types/express": "^4.17.21",
+    "@types/node-cron": "^3.0.11"
+  }
+}

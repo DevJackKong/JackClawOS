@@ -1,0 +1,27 @@
+{
+  "name": "{{PROJECT_NAME}}",
+  "version": "0.1.0",
+  "description": "{{DESCRIPTION}}",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@jackclaw/sdk": "^0.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.4.0"
+  },
+  "author": "{{AUTHOR}}",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "openclaw": {
+    "extensions": ["./dist/index.js"]
+  }
+}

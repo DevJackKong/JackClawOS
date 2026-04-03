@@ -1,0 +1,192 @@
+/**
+ * plugin.ts — JackClaw OpenClaw Plugin main body.
+ *
+ * Implements:
+ *   1. Slash-commands (/jackclaw status, /jackclaw report, /jackclaw help)
+ *   2. Natural-language intercept via inbound_claim hook
+ *   3. Background service: polls Hub every 60 s and pushes new-report
+ *      notifications to the CEO's configured delivery channel.
+ */
+
+import type {
+  OpenClawPluginApi,
+  OpenClawPluginService,
+  OpenClawPluginServiceContext,
+} from 'openclaw/plugin-sdk/plugin-entry'
+import { JACKCLAW_COMMANDS, matchNaturalLanguage, handleReport, handleStatus } from './commands.js'
+import {
+  fetchSummary,
+  hubHealthCheck,
+  formatSummary,
+  formatNodeStatus,
+  fetchNodes,
+} from './bridge.js'
+
+/** Minimal delivery helper — calls the Gateway deliver endpoint if configured. */
+async function pushNotification(text: string, ctx: OpenClawPluginServiceContext): Promise<void> {
+  const cfg = ctx.config as Record<string, unknown>
+  const pluginCfg = (cfg['plugins'] as Record<string, unknown> | undefined)?.['jackclaw'] as
+    | Record<string, unknown>
+    | undefined
+
+  const deliveryTo = (pluginCfg?.['notifyTo'] as string | undefined) ?? ''
+  const deliveryChannel = (pluginCfg?.['notifyChannel'] as string | undefined) ?? ''
+
+  if (!deliveryTo || !deliveryChannel) {
+    ctx.logger.info('[jackclaw] no notifyTo/notifyChannel configured — skipping push')
+    return
+  }
+
+  // Use OpenClaw's runtime deliver API when available
+  const runtime = (ctx as unknown as { runtime?: { deliver?: (params: unknown) => Promise<void> } }).runtime
+  if (runtime?.deliver) {
+    try {
+      await runtime.deliver({ to: deliveryTo, channel: deliveryChannel, text })
+      ctx.logger.info(`[jackclaw] pushed notification to ${deliveryTo} via ${deliveryChannel}`)
+    } catch (err) {
+      ctx.logger.warn(`[jackclaw] deliver failed: ${String(err)}`)
+    }
+  } else {
+    // Fallback: log to console for manual piping
+    ctx.logger.info(`[jackclaw] notification (${deliveryChannel} → ${deliveryTo}):\n${text}`)
+  }
+}
+
+/** Build the background polling service. */
+function buildJackclawService(): OpenClawPluginService {
+  let stopped = false
+  let lastReportingNodes = 0
+
+  return {
+    id: 'jackclaw-hub-poller',
+    async start(ctx: OpenClawPluginServiceContext) {
+      ctx.logger.info('[jackclaw] Hub poller started (interval: 60s)')
+      stopped = false
+
+      const poll = async () => {
+        if (stopped) return
+
+        try {
+          const alive = await hubHealthCheck()
+          if (!alive) {
+            ctx.logger.info('[jackclaw] Hub unreachable, skipping poll')
+            return
+          }
+
+          const summary = await fetchSummary()
+          const currentCount = summary.reportingNodes
+
+          // Notify CEO when new reports arrive
+          if (currentCount > lastReportingNodes) {
+            const newCount = currentCount - lastReportingNodes
+            const text =
+              `🔔 JackClaw 新汇报\n有 ${newCount} 个节点提交了新汇报。\n\n` +
+              formatSummary(summary)
+            await pushNotification(text, ctx)
+          }
+
+          lastReportingNodes = currentCount
+        } catch (err) {
+          ctx.logger.warn(`[jackclaw] poll error: ${String(err)}`)
+        }
+      }
+
+      // Initial poll after startup
+      setTimeout(poll, 5000)
+
+      // Recurring poll
+      const interval = setInterval(poll, 60_000)
+
+      // Store interval so stop() can clear it
+      ;(this as unknown as { _interval?: ReturnType<typeof setInterval> })._interval = interval
+    },
+    async stop(ctx: OpenClawPluginServiceContext) {
+      stopped = true
+      const self = this as unknown as { _interval?: ReturnType<typeof setInterval> }
+      if (self._interval) {
+        clearInterval(self._interval)
+        delete self._interval
+      }
+      ctx.logger.info('[jackclaw] Hub poller stopped')
+    },
+  }
+}
+
+/** Register the JackClaw plugin with OpenClaw. */
+export function registerJackclawPlugin(api: OpenClawPluginApi): void {
+  // 1. Register slash commands
+  for (const cmd of JACKCLAW_COMMANDS) {
+    api.registerCommand(cmd)
+  }
+
+  // 2. Natural-language intercept via inbound_claim hook
+  api.on('inbound_claim', async (event, _ctx) => {
+    const match = matchNaturalLanguage(event.content)
+    if (!match) return undefined
+
+    // Build a synthetic PluginCommandContext-like object (minimal)
+    const fakeCtx = {
+      channel: _ctx.channelId ?? 'unknown',
+      isAuthorizedSender: event.commandAuthorized ?? false,
+      config: api.config,
+      commandBody: event.content,
+      args: '',
+      requestConversationBinding: async () => ({ status: 'error' as const, message: 'not supported' }),
+      detachConversationBinding: async () => ({ removed: false }),
+      getCurrentConversationBinding: async () => null,
+    }
+
+    let result
+    if (match === 'report') {
+      result = await handleReport(fakeCtx as Parameters<typeof handleReport>[0])
+    } else {
+      result = await handleStatus(fakeCtx as Parameters<typeof handleStatus>[0])
+    }
+
+    // Return handled=true so OpenClaw skips the LLM agent for this message
+    // Note: inbound_claim result shape is { handled: boolean }
+    // We log the reply; actual delivery happens via the channel's reply pipeline
+    api.logger.info(`[jackclaw] natural-language intercept (${match}): ${result.text?.slice(0, 80)}…`)
+
+    // We can't directly reply here, but we signal that we handled it.
+    // The full reply goes through the before_dispatch hook below.
+    return { handled: false } // let the agent handle but with context
+  })
+
+  // 3. before_dispatch hook: intercept natural-language triggers before LLM
+  api.on('before_dispatch', async (event, _ctx) => {
+    const match = matchNaturalLanguage(event.content ?? '')
+    if (!match) return undefined
+
+    try {
+      let text: string
+      if (match === 'report') {
+        const alive = await hubHealthCheck()
+        if (!alive) {
+          text = '⚠️ JackClaw Hub 离线，无法获取汇报数据。'
+        } else {
+          const summary = await fetchSummary()
+          text = formatSummary(summary)
+        }
+      } else {
+        const alive = await hubHealthCheck()
+        if (!alive) {
+          text = '⚠️ JackClaw Hub 离线，无法获取节点状态。'
+        } else {
+          const nodes = await fetchNodes()
+          text = formatNodeStatus(nodes)
+        }
+      }
+
+      return { handled: true, text }
+    } catch (err) {
+      api.logger.warn(`[jackclaw] before_dispatch error: ${String(err)}`)
+      return { handled: true, text: `❌ JackClaw 查询失败：${String(err)}` }
+    }
+  })
+
+  // 4. Register background Hub poller service
+  api.registerService(buildJackclawService())
+
+  api.logger.info('[jackclaw] JackClaw plugin registered ✅')
+}

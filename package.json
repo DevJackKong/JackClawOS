@@ -1,0 +1,27 @@
+{
+  "name": "jackclaw",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "dev": "concurrently \"npm run dev --workspace=packages/hub\" \"npm run dev --workspace=packages/node\"",
+    "dev:hub": "npm run dev --workspace=packages/hub",
+    "dev:node": "npm run dev --workspace=packages/node",
+    "dev:cli": "npm run dev --workspace=packages/cli",
+    "lint": "npm run lint --workspaces --if-present",
+    "clean": "npm run clean --workspaces --if-present && rm -rf node_modules",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.0",
+    "typescript": "^5.4.0"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  }
+}

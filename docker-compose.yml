@@ -1,0 +1,89 @@
+version: '3.9'
+
+networks:
+  jackclaw-net:
+    driver: bridge
+
+volumes:
+  jackclaw-hub-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${HOME}/.jackclaw/hub
+  jackclaw-node-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${HOME}/.jackclaw/node
+
+services:
+  # ─────────────────────────────────────────────
+  # JackClaw Hub — 中央协调服务
+  # ─────────────────────────────────────────────
+  jackclaw-hub:
+    build:
+      context: ./packages/hub
+      dockerfile: Dockerfile
+      target: development
+    image: jackclaw-hub:dev
+    container_name: jackclaw-hub
+    restart: unless-stopped
+    ports:
+      - "${HUB_PORT:-19001}:19001"
+    environment:
+      NODE_ENV: development
+      HUB_PORT: 19001
+      HUB_JWT_SECRET: ${HUB_JWT_SECRET:-dev-secret-change-in-production}
+      HUB_DATA_DIR: /data
+      LOG_LEVEL: ${LOG_LEVEL:-debug}
+    volumes:
+      - jackclaw-hub-data:/data
+      - ./packages/hub/src:/app/src:ro   # hot-reload in dev
+    networks:
+      - jackclaw-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:19001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # ─────────────────────────────────────────────
+  # JackClaw Node — 模拟同事节点
+  # ─────────────────────────────────────────────
+  jackclaw-node:
+    build:
+      context: ./packages/node
+      dockerfile: Dockerfile
+      target: development
+    image: jackclaw-node:dev
+    container_name: jackclaw-node
+    restart: unless-stopped
+    ports:
+      - "${NODE_PORT:-19000}:19000"
+    environment:
+      NODE_ENV: development
+      NODE_PORT: 19000
+      NODE_ID: ${NODE_ID:-}
+      NODE_NAME: ${NODE_NAME:-local-node}
+      NODE_ROLE: ${NODE_ROLE:-member}
+      HUB_URL: http://jackclaw-hub:19001
+      LOG_LEVEL: ${LOG_LEVEL:-debug}
+      REPORT_SCHEDULE: ${REPORT_SCHEDULE:-0 8 * * *}
+      REPORT_VISIBILITY: ${REPORT_VISIBILITY:-summary_only}
+    volumes:
+      - jackclaw-node-data:/data
+      - ./packages/node/src:/app/src:ro  # hot-reload in dev
+    networks:
+      - jackclaw-net
+    depends_on:
+      jackclaw-hub:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:19000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s

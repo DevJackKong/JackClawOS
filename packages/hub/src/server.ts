@@ -129,6 +129,12 @@ export function createServer(): Application {
   })
   app.use('/api/', limiter)
 
+  // Dashboard — serve static files from public/
+  const publicDir = path.join(__dirname, '..', 'public')
+  if (fs.existsSync(publicDir)) {
+    app.use(express.static(publicDir))
+  }
+
   // Health check (no auth)
   app.get('/health', (_req: Request, res: Response) => {
     res.json({ status: 'ok', service: 'jackclaw-hub', ts: Date.now() })

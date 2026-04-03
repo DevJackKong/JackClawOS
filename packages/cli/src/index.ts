@@ -9,6 +9,7 @@ import { registerConfig } from './commands/config';
 import { mentionCommand, identityCommand, sessionsCommand } from './commands/identity';
 import { registerStartCommand } from './commands/start';
 import { registerChatCommand } from './commands/chat';
+import { registerDemo } from './commands/demo';
 
 const program = new Command();
 
@@ -28,5 +29,6 @@ identityCommand(program);
 sessionsCommand(program);
 registerStartCommand(program);
 registerChatCommand(program);
+registerDemo(program);
 
 program.parse(process.argv);

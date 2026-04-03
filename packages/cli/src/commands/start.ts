@@ -90,9 +90,11 @@ export function registerStart(program: Command): void {
     .option('--node-only', 'Start Node only')
     .option('--hub-port <port>', 'Hub HTTP port', '3100')
     .option('--node-port <port>', 'Node HTTP port', '19000')
-    .action(async (opts: { hubOnly?: boolean; nodeOnly?: boolean; hubPort: string; nodePort: string }) => {
+    .option('--nodes <count>', 'Number of nodes to start', '1')
+    .action(async (opts: { hubOnly?: boolean; nodeOnly?: boolean; hubPort: string; nodePort: string; nodes: string }) => {
       const startHub  = !opts.nodeOnly;
       const startNode = !opts.hubOnly;
+      const nodeCount = Math.max(1, parseInt(opts.nodes, 10) || 1);
       const hubPort   = parseInt(opts.hubPort, 10);
       const nodePort  = parseInt(opts.nodePort, 10);
 
@@ -129,19 +131,30 @@ export function registerStart(program: Command): void {
         }
       }
 
-      // Spawn Node
+      // Spawn Node(s)
       if (startNode) {
-        console.log(chalk.green(`[start] Spawning Node on port ${nodePort}...`));
-        procs.push(spawnService({
-          label: 'node', color: chalk.green, script: nodeScript,
-          env: { NODE_PORT: String(nodePort), JACKCLAW_HUB_URL: `http://localhost:${hubPort}` },
-        }));
-        try {
-          await waitForHealth(`http://localhost:${nodePort}/health`);
-          console.log(chalk.green(`✅ Node ready — http://localhost:${nodePort}`));
-        } catch (e: any) {
-          console.error(chalk.red(`✗ Node not healthy: ${e.message}`));
-          shutdown(procs); return;
+        const nodeColors = [chalk.green, chalk.cyan, chalk.magenta, chalk.yellow, chalk.white];
+        for (let i = 0; i < nodeCount; i++) {
+          const port = nodePort + i;
+          const label = nodeCount > 1 ? `node-${i + 1}` : 'node';
+          const color = nodeColors[i % nodeColors.length];
+          
+          if (await isPortInUse(port)) {
+            console.error(chalk.red(`✗ Port ${port} already in use. Skipping ${label}.`));
+            continue;
+          }
+
+          console.log(color(`[start] Spawning ${label} on port ${port}...`));
+          procs.push(spawnService({
+            label, color, script: nodeScript,
+            env: { NODE_PORT: String(port), JACKCLAW_HUB_URL: `http://localhost:${hubPort}`, JACKCLAW_NODE_ID: label },
+          }));
+          try {
+            await waitForHealth(`http://localhost:${port}/health`);
+            console.log(chalk.green(`✅ ${label} ready — http://localhost:${port}`));
+          } catch (e: any) {
+            console.error(chalk.red(`✗ ${label} not healthy: ${e.message}`));
+          }
         }
       }
 

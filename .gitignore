@@ -62,3 +62,4 @@ data/
 *.cert
 *.p12
 secrets/
+.worktrees

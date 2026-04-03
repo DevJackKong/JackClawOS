@@ -195,6 +195,7 @@ export const ChatPanel: React.FC<Props> = ({ token, nodeId }) => {
               </button>
             ))}
           </div>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
           <textarea
             ref={inputRef}
             className="chat-input"
@@ -212,6 +213,7 @@ export const ChatPanel: React.FC<Props> = ({ token, nodeId }) => {
           >
             {sending ? '…' : '发送'}
           </button>
+          </div>
         </div>
       </div>
     </div>

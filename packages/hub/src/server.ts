@@ -18,6 +18,7 @@ import directoryRoute from './routes/directory'
 import watchdogRoute from './routes/watchdog'
 import humanReviewRoute from './routes/human-review'
 import paymentRoute from './routes/payment'
+import planRoute from './routes/plan'
 import { chatRouter, attachChatWss } from './routes/chat'
 import { JWTPayload } from './types'
 
@@ -144,6 +145,7 @@ export function createServer(): Application {
   app.use('/api/watchdog', watchdogRoute)
   app.use('/api/review', humanReviewRoute)
   app.use('/api/payment', paymentRoute)
+  app.use('/api/plan', planRoute)
   app.use('/api/chat', chatRouter)   // ClawChat REST
 
   // 404 handler

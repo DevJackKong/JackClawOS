@@ -3,6 +3,9 @@ import { openMessage, decrypt } from '@jackclaw/protocol'
 import type { NodeIdentity, JackClawMessage, TaskPayload, EncryptedPayload } from '@jackclaw/protocol'
 import type { JackClawConfig } from './config'
 import { getAiClient } from './ai-client'
+import { getOwnerMemoryAuth } from './owner-memory-auth'
+import { getOwnerMemory } from './owner-memory'
+import { TaskPlanner, formatPlan } from './task-planner'
 
 // Harness runner 接口（运行时注入，避免编译期跨包依赖）
 export type HarnessRunner = (opts: {
@@ -77,6 +80,29 @@ export function createServer(identity: NodeIdentity, config: JackClawConfig) {  
     res.json({ pong: true, nodeId: identity.nodeId, ts: Date.now() })
   })
 
+  // ── Task Plan（规划引擎）────────────────────────────────────────────────────
+  // POST /api/plan { taskId, title, description, useAi? }
+  // 返回完整 ExecutionPlan + 格式化文本
+  app.post('/api/plan', (req: Request, res: Response) => {
+    const { taskId, title, description, useAi } = req.body ?? {}
+    if (!title || !description) {
+      res.status(400).json({ error: 'title and description required' })
+      return
+    }
+    const aiClient = getAiClient(identity.nodeId, config)
+    const planner = new TaskPlanner(aiClient)
+    planner.plan({
+      taskId: taskId ?? `plan-${Date.now()}`,
+      title,
+      description,
+      useAi: useAi !== false,
+    }).then(plan => {
+      res.json({ plan, formatted: formatPlan(plan) })
+    }).catch(err => {
+      res.status(500).json({ error: err.message })
+    })
+  })
+
   // ── Error handler ───────────────────────────────────────────────────────────
   app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
     console.error('[server] Unhandled error:', err.message)
@@ -88,6 +114,21 @@ export function createServer(identity: NodeIdentity, config: JackClawConfig) {  
 
 function handleTask(task: TaskPayload, identity: NodeIdentity, config: JackClawConfig): void {
   console.log(`[task] Handling task ${task.taskId}: ${task.action}`, task.params)
+
+  // 所有 harness/ai 任务先自动规划，打印计划后再执行
+  if ((task.action === 'harness' || task.action === 'ai') && task.params?.description) {
+    const aiClient = getAiClient(identity.nodeId, config)
+    const planner = new TaskPlanner(aiClient)
+    // 非阻塞：规划和执行同时启动，规划完打印计划
+    planner.plan({
+      taskId: task.taskId,
+      title: (task.params.title as string) || task.taskId,
+      description: task.params.description as string,
+      useAi: true,
+    }).then(plan => {
+      console.log('\n' + formatPlan(plan) + '\n')
+    }).catch(() => { /* 规划失败不影响执行 */ })
+  }
 
   // action='harness' → 接入 Harness 执行链
   if (task.action === 'harness' && task.params?.description) {

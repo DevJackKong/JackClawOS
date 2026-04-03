@@ -7,6 +7,7 @@ export interface RegisteredNode {
   publicKey: string         // PEM - node's public key
   registeredAt: number
   lastReportAt?: number
+  callbackUrl?: string      // Node 暴露的 HTTP endpoint（用于 Hub→Node 任务/规划转发）
 }
 
 export interface NodeRegistry {

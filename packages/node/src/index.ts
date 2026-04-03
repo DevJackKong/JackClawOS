@@ -8,6 +8,7 @@ import { createMessage } from '@jackclaw/protocol'
 import { getAiClient } from './ai-client'
 import { NodeChatClient } from './chat-client'
 import { getOwnerMemory } from './owner-memory'
+import { MemoryManager, MemDirSync } from '@jackclaw/memory'
 
 async function main() {
   console.log('🦞 JackClaw Node starting...')

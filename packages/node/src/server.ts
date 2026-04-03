@@ -6,6 +6,7 @@ import { getAiClient } from './ai-client'
 import { getOwnerMemoryAuth } from './owner-memory-auth'
 import { getOwnerMemory } from './owner-memory'
 import { TaskPlanner, formatPlan } from './task-planner'
+import { createOwnerAuthRouter } from './routes/owner-auth'
 
 // Harness runner 接口（运行时注入，避免编译期跨包依赖）
 export type HarnessRunner = (opts: {
@@ -102,6 +103,9 @@ export function createServer(identity: NodeIdentity, config: JackClawConfig) {  
       res.status(500).json({ error: err.message })
     })
   })
+
+  // ── OwnerMemory 授权区 ───────────────────────────────────────────────────────
+  app.use('/api/owner', createOwnerAuthRouter(identity))
 
   // ── Error handler ───────────────────────────────────────────────────────────
   app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {

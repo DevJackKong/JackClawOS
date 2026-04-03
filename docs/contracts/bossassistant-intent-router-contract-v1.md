@@ -446,8 +446,8 @@ This keeps risk and approval derived from the routed intent instead of treating 
 
 Recommended package targets:
 
-- runtime schema: `packages/contracts/src/intent-router.ts`
-- contract tests: `packages/contracts/test/intent-router.test.ts`
+- runtime schema: `packages/contracts/src/router.ts`
+- contract tests: `packages/contracts/test/router.test.ts` *(not yet created)*
 - router fixtures: `packages/contracts/fixtures/intent-router/`
 
 Recommended validation approach:

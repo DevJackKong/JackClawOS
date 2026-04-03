@@ -4,7 +4,7 @@
   "description": "JackClaw CLI management tool",
   "main": "dist/index.js",
   "bin": {
-    "jackclaw": "dist/src/index.js"
+    "jackclaw": "dist/index.js"
   },
   "scripts": {
     "build": "tsc",

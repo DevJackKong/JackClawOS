@@ -2,6 +2,9 @@
   "name": "jackclaw",
   "version": "0.1.0",
   "private": true,
+  "bin": {
+    "jackclaw": "packages/cli/dist/index.js"
+  },
   "workspaces": [
     "packages/*"
   ],

@@ -147,7 +147,10 @@ export function registerStart(program: Command): void {
 
       if (procs.length === 0) { console.error(chalk.red('Nothing to start.')); process.exit(1); }
 
-      console.log(chalk.bold('\nAll services running. Ctrl+C to stop.\n'));
+      console.log(chalk.bold('\n🦞 JackClaw is running'));
+      if (startHub) console.log(chalk.blue(`   Hub:  http://localhost:${hubPort}`));
+      if (startNode) console.log(chalk.green(`   Node: http://localhost:${nodePort}`));
+      console.log(chalk.gray('   Ctrl+C to stop.\n'));
       process.on('SIGINT',  () => shutdown(procs));
       process.on('SIGTERM', () => shutdown(procs));
     });

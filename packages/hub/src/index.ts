@@ -14,6 +14,7 @@ attachChatWss(httpServer)
 
 httpServer.listen(PORT, () => {
   console.log(`[hub] JackClaw Hub listening on http://localhost:${PORT}`)
+  console.log(`[hub] Dashboard: http://localhost:${PORT}`)
   console.log(`[hub] Routes:`)
   console.log(`  POST /api/register     - Node registration`)
   console.log(`  POST /api/report       - Receive agent report (JWT)`)

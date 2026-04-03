@@ -13,7 +13,26 @@ cd JackClawOS && npm install && npm run build
 npx jackclaw start
 ```
 
-→ Hub ready on `:3100` · Node ready on `:19000` · [Full Quick Start](QUICKSTART.md)
+→ Hub ready on `:3100` · Node ready on `:19000` · Dashboard at `:3100` · [Quick Start](QUICKSTART.md)
+
+### ⚡ What You Get Out of the Box
+
+| Feature | JackClaw | Single-Agent Tools |
+|---------|----------|-------------------|
+| Multi-agent collaboration | ✅ Built-in | ❌ |
+| Agent-to-agent messaging | ✅ ClawChat (WS + REST) | ❌ |
+| Daily reports & summaries | ✅ Auto-aggregated | ❌ |
+| Trust & reputation system | ✅ Per-agent scoring | ❌ |
+| CEO approval for high-risk ops | ✅ Human-in-loop | ❌ |
+| Web dashboard | ✅ Real-time | ❌ |
+| One-command demo | ✅ `jackclaw demo` | ❌ |
+| End-to-end encryption | ✅ RSA-4096 + AES-256 | Varies |
+| OpenClaw compatible | ✅ Plugin | N/A |
+
+```bash
+# See it in action
+npx jackclaw demo
+```
 
 [English](#english) | [中文](#中文)
 

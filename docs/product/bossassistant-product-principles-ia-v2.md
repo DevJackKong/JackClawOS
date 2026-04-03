@@ -1,12 +1,12 @@
-# BossAssistant Product Principles & IA v2
+# JackClaw OS — Product Principles & IA v2
 
 Status: Draft v2  
 Date: 2026-03-29  
-Owner: BossAssistant
+Owner: JackClaw OS
 
 ## 1. Product Definition
 
-BossAssistant is not a chat assistant. It is an agent operating system for executive work.
+JackClaw OS is not a chat assistant. It is an agent operating system for executive work.
 
 Its purpose is to let a user submit one sentence, then have the system:
 
@@ -22,7 +22,7 @@ The human remains the final decision-maker. The system absorbs process-heavy cog
 
 ## 2. Product Vision
 
-BossAssistant should feel like an executive operating system, not a messaging app.
+JackClaw OS should feel like an executive operating system, not a messaging app.
 
 The user experience should shift from:
 
@@ -52,7 +52,7 @@ to:
 
 ## 4. Product Non-Goals
 
-BossAssistant v2 does not aim to:
+JackClaw OS v2 does not aim to:
 
 - mimic JackClaw OS visuals or implementation details
 - behave like a general-purpose assistant for all consumer tasks
@@ -95,7 +95,7 @@ Repeated work should get better over time. The system should preserve facts, pre
 
 ### 5.7 Model Agnostic
 
-BossAssistant should not be product-defined by one model vendor. Model choice is infrastructure, not product identity.
+JackClaw OS should not be product-defined by one model vendor. Model choice is infrastructure, not product identity.
 
 ### 5.8 Open-Source Friendly
 
@@ -129,7 +129,7 @@ This user typically wants:
 
 ## 8. Product Surface Model
 
-BossAssistant has two product layers:
+JackClaw OS has two product layers:
 
 - Decision Surface
 - Execution Workspace
@@ -397,7 +397,7 @@ Expected outputs:
 
 ## 13. Approval Model
 
-BossAssistant should support approval at three levels:
+JackClaw OS should support approval at three levels:
 
 - plan approval
 - artifact approval
@@ -439,7 +439,7 @@ Avoid making `chat`, `assistant reply`, and `conversation` the dominant product 
 
 ## 16. Design Direction
 
-BossAssistant should feel:
+JackClaw OS should feel:
 
 - focused
 - high-signal
@@ -462,7 +462,7 @@ Recommended visual traits:
 
 ## 17. Product Success Criteria
 
-BossAssistant is succeeding when:
+JackClaw OS is succeeding when:
 
 - users can issue a command without selecting a tool first
 - the system consistently maps requests into the right workflow

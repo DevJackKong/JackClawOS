@@ -1,8 +1,8 @@
-# BossAssistant Demo 任务清单 v2
+# JackClaw OS — Demo 任务清单 v2
 
 状态: 进行中  
 日期: 2026-03-29  
-负责人: BossAssistant
+负责人: JackClaw OS
 
 ## 1. 使用说明
 

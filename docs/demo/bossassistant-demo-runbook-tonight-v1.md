@@ -1,8 +1,8 @@
-# BossAssistant Demo Runbook Tonight v1
+# JackClaw OS — Demo Runbook Tonight v1
 
 状态: 可执行  
 日期: 2026-03-29  
-负责人: BossAssistant
+负责人: JackClaw OS
 
 ## 1. 目标
 
@@ -106,7 +106,7 @@ npm run dev:web -- --host 127.0.0.1 --port 4173
 
 你要讲的点：
 
-- BossAssistant 不会假装自己知道
+- JackClaw OS 不会假装自己知道
 - 不确定时先 clarification，再决定 workflow
 - 这体现 human-gated 和 transparent-by-default
 

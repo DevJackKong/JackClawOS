@@ -1,8 +1,8 @@
-# BossAssistant Intent Router Contract v1
+# JackClaw OS — Intent Router Contract v1
 
 Status: Draft v1  
 Date: 2026-03-29  
-Owner: BossAssistant  
+Owner: JackClaw OS  
 Depends on:
 
 - `docs/product/bossassistant-product-principles-ia-v2.md`
@@ -10,7 +10,7 @@ Depends on:
 
 ## 1. Purpose
 
-This document defines the first formal contract for the BossAssistant Intent Router.
+This document defines the first formal contract for the JackClaw OS Intent Router.
 
 The Intent Router is the first typed decision point after command intake. Its job is to turn a single executive command into a workflow-ready routing result that the Planner, Approval Engine, and Dashboard can all rely on.
 

@@ -1,12 +1,12 @@
-# BossAssistant Technical Architecture Spec v2
+# JackClaw OS — Technical Architecture Spec v2
 
 Status: Draft v2  
 Date: 2026-03-29  
-Owner: BossAssistant
+Owner: JackClaw OS
 
 ## 1. Purpose
 
-This document defines the technical architecture for BossAssistant v2.
+This document defines the technical architecture for JackClaw OS v2.
 
 It translates the approved product direction into an implementation-oriented system design that is:
 
@@ -18,7 +18,7 @@ It translates the approved product direction into an implementation-oriented sys
 
 ## 2. System Summary
 
-BossAssistant is an agent operating system that turns a single natural-language command into a controlled execution pipeline.
+JackClaw OS is an agent operating system that turns a single natural-language command into a controlled execution pipeline.
 
 The system must:
 
@@ -110,7 +110,7 @@ bossassistant/
 
 ## 6. High-Level System Modules
 
-BossAssistant consists of the following runtime modules:
+JackClaw OS consists of the following runtime modules:
 
 - Input Intake
 - Intent Router
@@ -147,7 +147,7 @@ Primary execution path:
 
 ## 8. Anthropic Pattern Mapping
 
-BossAssistant uses a combination of agentic patterns described by Anthropic.
+JackClaw OS uses a combination of agentic patterns described by Anthropic.
 
 ### 8.1 Routing
 
@@ -182,7 +182,7 @@ Used by:
 - tools
 - runtime adapters
 
-BossAssistant should not begin with full open-ended autonomy. It should begin with controlled workflows that can adopt more autonomy over time.
+JackClaw OS should not begin with full open-ended autonomy. It should begin with controlled workflows that can adopt more autonomy over time.
 
 ## 9. Domain Model
 
@@ -447,7 +447,7 @@ Each workflow directory should contain:
 
 ## 15. Runtime Adapter Layer
 
-BossAssistant must support multiple runtimes without rewriting orchestration logic.
+JackClaw OS must support multiple runtimes without rewriting orchestration logic.
 
 ### 15.1 Adapter Interface
 
@@ -725,6 +725,6 @@ This spec maps cleanly to the existing planning direction:
 
 ## 28. Summary
 
-BossAssistant v2 should be implemented as a workflow-first, harness-driven, model-agnostic system with explicit contracts, approval checkpoints, structured memory, and a dashboard designed for executive decision-making.
+JackClaw OS v2 should be implemented as a workflow-first, harness-driven, model-agnostic system with explicit contracts, approval checkpoints, structured memory, and a dashboard designed for executive decision-making.
 
 The architecture should remain simple enough for open-source contributors to understand, while still supporting the core agentic patterns needed for real executive workflows.

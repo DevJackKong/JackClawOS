@@ -1,12 +1,12 @@
-# BossAssistant Demo MVP Tonight v1
+# JackClaw OS — Demo MVP Tonight v1
 
 Status: Working Draft  
 Date: 2026-03-29  
-Owner: BossAssistant
+Owner: JackClaw OS
 
 ## 1. Goal
 
-Tonight's goal is not a full BossAssistant system.
+Tonight's goal is not a full JackClaw OS system.
 
 Tonight's goal is a believable, runnable demo that proves the core product thesis:
 

@@ -1,8 +1,8 @@
-# BossAssistant 开发日志
+# JackClaw OS — 开发日志
 
 状态: 进行中  
 开始时间: 2026-03-29  
-负责人: BossAssistant
+负责人: JackClaw OS
 
 ## 1. 目的
 

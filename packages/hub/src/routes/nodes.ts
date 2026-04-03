@@ -4,6 +4,7 @@
 import { Router, Request, Response } from 'express'
 import { getAllNodes } from '../store/nodes'
 import { getLastReportEntry } from '../store/reports'
+import { getAlerts, getLatestSnapshot } from '@jackclaw/watchdog'
 
 const router = Router()
 
@@ -19,6 +20,9 @@ router.get('/', (req: Request, res: Response): void => {
 
   const result = nodes.map(node => {
     const lastReport = getLastReportEntry(node.nodeId)
+    const unackedAlerts = getAlerts(node.nodeId, { acknowledged: false })
+    const snapshot = getLatestSnapshot(node.nodeId)
+
     return {
       nodeId: node.nodeId,
       name: node.name,
@@ -26,6 +30,12 @@ router.get('/', (req: Request, res: Response): void => {
       registeredAt: node.registeredAt,
       lastReportAt: node.lastReportAt ?? null,
       lastReportSummary: lastReport?.summary ?? null,
+      watchdogStatus: {
+        unackedAlerts: unackedAlerts.length,
+        criticalAlerts: unackedAlerts.filter(a => a.severity === 'critical').length,
+        lastSnapshotAt: snapshot?.timestamp ?? null,
+        memoryHash: snapshot?.memoryHash ?? null,
+      },
     }
   })
 

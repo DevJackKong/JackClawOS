@@ -28,6 +28,7 @@ import {
   listSnapshotIds,
   updateEvent,
 } from './isolation'
+import { getAlerter } from './alerts'
 
 // ─── In-memory policy store (policies themselves aren't sensitive logs) ──────
 
@@ -195,6 +196,20 @@ export function raiseAlert(
   }
 
   appendEvent(event.nodeId, event)
+
+  // Push to ClawChat if alerter is configured
+  const alerter = getAlerter()
+  if (alerter) {
+    const typeMap: Partial<Record<WatchdogEventType, "memory-tamper" | "trust-drop" | "memory-oom" | "high-failure">> = {
+      memory_anomaly: "memory-tamper",
+      trust_drop: "trust-drop",
+    }
+    const chatType = typeMap[event.type]
+    if (chatType) {
+      alerter.alert(chatType, event.description).catch(() => {})
+    }
+  }
+
   return event
 }
 

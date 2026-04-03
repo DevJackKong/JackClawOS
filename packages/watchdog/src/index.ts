@@ -13,3 +13,4 @@ export {
   getAlerts,
   getLatestSnapshot,
 } from './monitor'
+export { WatchdogAlerter, configureAlerter, getAlerter } from './alerts'

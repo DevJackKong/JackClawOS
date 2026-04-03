@@ -1,6 +1,7 @@
 import type { BriefingItem, DashboardBriefing } from "@bossassistant/contracts";
 
 const CACHE_TTL_MS = 15 * 60 * 1000;
+const FETCH_TIMEOUT_MS = 10_000;
 
 let cachedBriefing: DashboardBriefing | null = null;
 let cachedAt = 0;
@@ -140,7 +141,8 @@ async function fetchJson<T>(url: string) {
     headers: {
       accept: "application/json",
       "user-agent": "BossAssistant/0.1"
-    }
+    },
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
   });
 
   if (!response.ok) {
@@ -155,7 +157,8 @@ async function fetchText(url: string) {
     headers: {
       accept: "text/plain, application/xml, text/xml, application/rss+xml, text/html",
       "user-agent": "BossAssistant/0.1"
-    }
+    },
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
   });
 
   if (!response.ok) {

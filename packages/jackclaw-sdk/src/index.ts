@@ -259,6 +259,94 @@ export function createMockScheduleContext(
   }
 }
 
+// ─── ClawChat Types ───────────────────────────────────────────────────────────
+// Mirror of hub/src/store/chat.ts — for plugin and SDK consumers
+
+export type ChatMessageType =
+  | 'human'
+  | 'task'
+  | 'ask'
+  | 'broadcast'
+  | 'reply'
+  | 'ack'
+
+export interface ChatMessage {
+  id: string
+  threadId?: string
+  replyToId?: string
+  from: string
+  to: string | string[]
+  type: ChatMessageType
+  content: string
+  attachments?: Array<{
+    name: string
+    type: 'file' | 'image' | 'memory-ref' | 'task-result'
+    url?: string
+    data?: string
+    memoryKey?: string
+  }>
+  ts: number
+  signature: string
+  encrypted: boolean
+  read?: boolean
+  executionResult?: {
+    status: 'success' | 'failed' | 'pending-review'
+    output: string
+    attempts: number
+  }
+}
+
+export interface ChatThread {
+  id: string
+  participants: string[]
+  title?: string
+  createdAt: number
+  lastMessageAt: number
+  messageCount: number
+}
+
+// ─── OwnerMemory Types ────────────────────────────────────────────────────────
+// Mirror of node/src/owner-memory.ts — for plugin and SDK consumers
+
+export type OwnerMemoryType =
+  | 'personality'
+  | 'relationship'
+  | 'emotional-state'
+  | 'preference'
+  | 'milestone'
+  | 'private-note'
+
+export interface OwnerMemoryEntry {
+  id: string
+  type: OwnerMemoryType
+  content: string
+  confidence: number
+  source: 'observed' | 'inferred' | 'explicit'
+  createdAt: number
+  updatedAt: number
+  expiresAt?: number
+  tags?: string[]
+}
+
+export interface RelationshipStats {
+  trustScore: number
+  totalInteractions: number
+  tasksSent: number
+  tasksCompleted: number
+  tasksRejected: number
+  lastActiveAt: number
+  firstMet: number
+  longestInactiveDays: number
+}
+
+export interface OwnerProfile {
+  nodeId: string
+  ownerName: string
+  stats: RelationshipStats
+  entries: OwnerMemoryEntry[]
+  lastUpdated: number
+}
+
 // ─── Harness Types ────────────────────────────────────────────────────────────
 
 // HarnessTask and HarnessResult — re-exported via relative path (workspace link pending)

@@ -2,9 +2,23 @@ import express, { Request, Response, NextFunction } from 'express'
 import { openMessage, decrypt } from '@jackclaw/protocol'
 import type { NodeIdentity, JackClawMessage, TaskPayload, EncryptedPayload } from '@jackclaw/protocol'
 import type { JackClawConfig } from './config'
+import { getAiClient } from './ai-client'
 
-export function createServer(identity: NodeIdentity, config: JackClawConfig) {
-  const app = express()
+// Harness runner 接口（运行时注入，避免编译期跨包依赖）
+export type HarnessRunner = (opts: {
+  taskId: string
+  title: string
+  description: string
+  workdir: string
+  requireApproval: boolean
+}) => Promise<{ status: string; attempts: number }>
+
+let harnessRunner: HarnessRunner | null = null
+export function registerHarnessRunner(runner: HarnessRunner): void {
+  harnessRunner = runner
+}
+
+export function createServer(identity: NodeIdentity, config: JackClawConfig) {  const app = express()
   app.use(express.json({ limit: '1mb' }))
 
   // ── Health check ────────────────────────────────────────────────────────────
@@ -37,7 +51,7 @@ export function createServer(identity: NodeIdentity, config: JackClawConfig) {
         const plaintext: string = decrypt(raw, identity.privateKey)
         const task = JSON.parse(plaintext) as TaskPayload
         console.log(`[server] Received task: ${task.taskId} — ${task.action}`)
-        handleTask(task)
+        handleTask(task, identity, config)
         res.json({ status: 'accepted', taskId: task.taskId })
       } catch (err: any) {
         console.error('[server] Failed to process task:', err.message)
@@ -50,7 +64,7 @@ export function createServer(identity: NodeIdentity, config: JackClawConfig) {
     try {
       const task = openMessage<TaskPayload>(msg, hubPublicKey, identity.privateKey)
       console.log(`[server] Received verified task: ${task.taskId} — ${task.action}`)
-      handleTask(task)
+      handleTask(task, identity, config)
       res.json({ status: 'accepted', taskId: task.taskId })
     } catch (err: any) {
       console.error('[server] Task verification/decryption failed:', err.message)
@@ -72,9 +86,37 @@ export function createServer(identity: NodeIdentity, config: JackClawConfig) {
   return app
 }
 
-function handleTask(task: TaskPayload): void {
-  // Extensible task dispatcher
+function handleTask(task: TaskPayload, identity: NodeIdentity, config: JackClawConfig): void {
   console.log(`[task] Handling task ${task.taskId}: ${task.action}`, task.params)
-  // Future: dispatch to task handlers based on task.action
+
+  // action='harness' → 接入 Harness 执行链
+  if (task.action === 'harness' && task.params?.description) {
+    if (!harnessRunner) {
+      console.warn('[task] No harness runner registered, skipping')
+      return
+    }
+    harnessRunner({
+      taskId: task.taskId,
+      title: (task.params.title as string) || task.taskId,
+      description: task.params.description as string,
+      workdir: (task.params.workdir as string) || config.workspaceDir,
+      requireApproval: !!(task.params.requireApproval),
+    }).then(r => console.log(`[task] ${task.taskId} → ${r.status} (${r.attempts} attempts)`))
+      .catch(err => console.error('[task] harness error:', err.message))
+    return
+  }
+
+  // action='ai' → 直接 AI 调用（带 AutoRetry + SmartCache）
+  if (task.action === 'ai' && task.params?.prompt) {
+    const aiClient = getAiClient(identity.nodeId, config)
+    aiClient.call({
+      systemPrompt: 'You are a JackClaw agent node. Complete the task concisely.',
+      messages: [{ role: 'user', content: task.params.prompt as string }],
+      queryContext: task.params.prompt as string,
+    }).then(result => {
+      console.log(`[task] ${task.taskId} ai → attempts=${result.attempts} tokens=${result.usage.inputTokens}`)
+    }).catch(err => console.error('[task] ai error:', err.message))
+    return
+  }
 }
 

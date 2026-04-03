@@ -1,7 +1,7 @@
 import cron from 'node-cron'
 import { loadConfig } from './config'
 import { loadOrCreateIdentity } from './identity'
-import { createServer } from './server'
+import { createServer, registerHarnessRunner } from './server'
 import { registerWithHub, sendReportToHub } from './hub'
 import { buildDailyReport } from './reporter'
 import { createMessage } from '@jackclaw/protocol'
@@ -30,9 +30,27 @@ async function main() {
     console.log(`[server] Listening on port ${config.port}`)
   })
 
-  // 3. Init AI client (probes cache capability on first call)
+  // 3. Init AI client + Harness runner
   const aiClient = getAiClient(identity.nodeId, config)
   console.log('[ai] AiClient initialized — cache probe will run on first call')
+
+  // 注册 Harness runner（运行时注入，编译期无跨包依赖）
+  try {
+    const { getHarnessRegistry, buildDefaultContext } = await import('../../harness/src/index.js' as any)
+    const registry = await getHarnessRegistry()
+    const harnessContext = buildDefaultContext({ nodeId: identity.nodeId, hubUrl: config.hubUrl })
+    registerHarnessRunner(async (opts) => {
+      const session = registry.spawnBest(
+        { id: opts.taskId, title: opts.title, description: opts.description, workdir: opts.workdir, requireHumanApproval: opts.requireApproval },
+        harnessContext,
+      )
+      const result = await session.run()
+      return { status: result.status, attempts: result.attempts }
+    })
+    console.log('[harness] Runner registered — available:', registry.getAvailable().join(', ') || 'none')
+  } catch {
+    console.log('[harness] Package not available in this environment, skipping')
+  }
 
   // 3. Schedule daily report
   if (!cron.validate(config.reportCron)) {

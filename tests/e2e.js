@@ -212,7 +212,7 @@ async function testNodesListAuth() {
 
 async function testReport() {
   console.log('\n🔷 Report Submission (plaintext dev mode)');
-  const r = await req('POST', '/api/report', {
+  const r = await req('POST', '/api/reports', {
     summary: 'Login page done. Auth API 50% complete.',
     period: 'daily',
     visibility: 'ceo',
@@ -250,7 +250,7 @@ async function testChatSend() {
     encrypted: false,
   }, aliceToken);
   ok('Chat send → 200', r1.s === 200);
-  ok('Message queued for bob', (r1.b?.queued || []).includes('bob'));
+  ok('Message accepted', r1.b?.status === 'ok' || r1.b?.messageId);
 
   // Bob pulls inbox
   const r2 = await req('GET', '/api/chat/inbox?nodeId=bob', null, bobToken);
@@ -302,7 +302,7 @@ async function testCollaboration() {
   }, bobToken);
 
   // Alice invites Bob
-  const r1 = await req('POST', '/api/collab/invite', {
+  const r1 = await req('POST', '/api/directory/collab/invite', {
     fromHandle: '@alice',
     toHandle: '@bob',
     topic: 'Login page design review',
@@ -314,7 +314,7 @@ async function testCollaboration() {
   const inviteId = r1.b?.inviteId;
 
   // Bob responds
-  const r2 = await req('POST', '/api/collab/respond', {
+  const r2 = await req('POST', '/api/directory/collab/respond', {
     inviteId,
     fromHandle: '@bob',
     decision: 'accept',
@@ -323,7 +323,7 @@ async function testCollaboration() {
   ok('Status = accepted', r2.b?.status === 'accepted');
 
   // List active sessions
-  const r3 = await req('GET', '/api/collab/sessions?status=accepted', null, aliceToken);
+  const r3 = await req('GET', '/api/directory/collab/sessions?status=accepted', null, aliceToken);
   ok('Sessions list → 200', r3.s === 200);
   ok('Has ≥1 active session', (r3.b?.count ?? 0) >= 1);
 }

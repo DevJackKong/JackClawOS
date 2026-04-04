@@ -20,6 +20,8 @@ const startTime = Date.now()
 router.get('/', (_req: Request, res: Response) => {
   res.json({
     status: 'ok',
+    service: 'jackclaw-hub',
+    version: '0.2.0',
     uptime: Math.round((Date.now() - startTime) / 1000),
     ts: Date.now(),
   })

@@ -15,6 +15,7 @@ import { getEmotionSensor, type Sentiment } from './ai-emotion'
 import type { AiClient } from './ai-client'
 import type { OwnerMemory } from './owner-memory'
 import { getTranslator } from './ai-translator'
+import { getTaskExecutor, createTaskRequest } from './task-executor'
 
 export interface SocialHandlerOptions {
   nodeId: string
@@ -63,6 +64,13 @@ export class SocialHandler {
     if (result.action === 'block') {
       // Silent discard — already logged by MessageFilter
       console.log(`[social] 🚫 Blocked message from ${from}: ${result.reason}`)
+      return
+    }
+
+    // ── Task routing: if message type is 'task', delegate to TaskExecutor ──
+    const msgAny = msg as any
+    if (msgAny.type === 'task' && this.opts.aiClient && this.opts.ownerMemory) {
+      await this._handleTaskMessage(msg)
       return
     }
 
@@ -141,6 +149,35 @@ export class SocialHandler {
       case 'negative': return '😟 对方情绪有些负面'
       case 'positive': return '😊 对方心情不错'
       default:         return ''
+    }
+  }
+
+  /** Handle messages with type='task' by delegating to TaskExecutor and auto-replying */
+  private async _handleTaskMessage(msg: SocialMessage): Promise<void> {
+    if (!this.opts.aiClient || !this.opts.ownerMemory) return
+
+    const msgAny = msg as any
+    const taskType = msgAny.taskType ?? 'chat'
+    console.log(`[social] 🤖 Task message from ${msg.fromAgent}, type=${taskType}`)
+
+    const executor = getTaskExecutor(this.opts.nodeId, this.opts.aiClient, this.opts.ownerMemory)
+    const taskReq = createTaskRequest(msg.content, taskType, {
+      model: msgAny.model,
+      maxTokens: msgAny.maxTokens,
+    })
+
+    try {
+      const result = await executor.execute(taskReq)
+      console.log(`[social] ✅ Task ${taskReq.id} completed in ${result.duration}ms`)
+
+      await this.ownerReply({
+        replyToId: msg.id,
+        content: result.output || `[Task ${result.status}]`,
+        fromHuman: this.opts.humanId ?? this.opts.nodeId,
+        fromAgent: this.opts.agentHandle ?? this.opts.nodeId,
+      }).catch(err => console.warn(`[social] Task auto-reply failed: ${(err as Error).message}`))
+    } catch (err) {
+      console.error(`[social] Task execution failed: ${(err as Error).message}`)
     }
   }
 

@@ -6,6 +6,7 @@ import { getAiClient } from './ai-client'
 import { getOwnerMemoryAuth } from './owner-memory-auth'
 import { getOwnerMemory } from './owner-memory'
 import { TaskPlanner, formatPlan } from './task-planner'
+import { getTaskExecutor, createTaskRequest } from './task-executor'
 import { createOwnerAuthRouter } from './routes/owner-auth'
 import { WorkloadTracker } from './workload-tracker'
 import { getPerformanceLedger } from './performance-ledger'
@@ -202,9 +203,55 @@ export function createServer(identity: NodeIdentity, config: JackClawConfig, cha
   // ── OwnerMemory 授权区 ───────────────────────────────────────────────────────
   app.use('/api/owner', createOwnerAuthRouter(identity))
 
-  // ── Performance Ledger ───────────────────────────────────────────────────────
+  // ── LLM Task Execution ────────────────────────────────────────────────────────
 
-  // GET /api/performance/stats — 本周绩效统计
+  // POST /api/tasks/execute { id, type, prompt, context?, model?, maxTokens?, permissionLevel? }
+  app.post('/api/tasks/execute', async (req: Request, res: Response) => {
+    const { id, type = 'chat', prompt, context, model, maxTokens, permissionLevel } = req.body ?? {}
+
+    if (!prompt) {
+      res.status(400).json({ error: 'prompt is required' })
+      return
+    }
+
+    const aiClient = getAiClient(identity.nodeId, config)
+    const ownerMemory = getOwnerMemory(identity.nodeId)
+    const executor = getTaskExecutor(identity.nodeId, aiClient, ownerMemory)
+    const taskReq = createTaskRequest(prompt, type, {
+      id,
+      context,
+      model,
+      maxTokens,
+      permissionLevel: permissionLevel ?? 0,
+    })
+
+    try {
+      const result = await executor.execute(taskReq)
+      res.json(result)
+    } catch (err: any) {
+      res.status(500).json({ error: err.message })
+    }
+  })
+
+  // POST /api/tasks/:id/cancel
+  app.post('/api/tasks/:taskId/cancel', (req: Request, res: Response) => {
+    const aiClient = getAiClient(identity.nodeId, config)
+    const ownerMemory = getOwnerMemory(identity.nodeId)
+    const executor = getTaskExecutor(identity.nodeId, aiClient, ownerMemory)
+    executor.cancel(req.params.taskId)
+    res.json({ taskId: req.params.taskId, status: 'cancelled' })
+  })
+
+  // GET /api/tasks/history
+  app.get('/api/tasks/history', (req: Request, res: Response) => {
+    const limit = Number(req.query.limit ?? 20)
+    const aiClient = getAiClient(identity.nodeId, config)
+    const ownerMemory = getOwnerMemory(identity.nodeId)
+    const executor = getTaskExecutor(identity.nodeId, aiClient, ownerMemory)
+    res.json({ history: executor.getHistory(limit) })
+  })
+
+  // ── Performance Ledger ───────────────────────────────────────────────────────
   app.get('/api/performance/stats', (_req: Request, res: Response) => {
     res.json(getPerformanceLedger().weeklyStats())
   })

@@ -20,6 +20,7 @@ import { registerFilter } from './commands/filter';
 import { registerSecretary } from './commands/secretary';
 import { registerTranslate } from './commands/translate';
 import { registerMoltbook } from './commands/moltbook';
+import { registerTask, registerTaskAsk } from './commands/task.js';
 
 const program = new Command();
 
@@ -52,5 +53,7 @@ registerFilter(program);
 registerSecretary(program);
 registerTranslate(program);
 registerMoltbook(program);
+registerTask(program);
+registerTaskAsk(program);
 
 program.parse(process.argv);

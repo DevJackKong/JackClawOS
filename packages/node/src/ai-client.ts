@@ -210,6 +210,134 @@ export class AiClient {
     return this.cache.getSavingsReport(period)
   }
 
+  // ── Tool-use support ─────────────────────────────────────────────────────────
+
+  /** 带工具定义的单次调用，返回包含工具调用信息的完整响应 */
+  async chatWithTools(
+    messages: Message[],
+    tools: Array<{ name: string; description: string; input_schema: unknown }>,
+    opts: { systemPrompt?: string; model?: string; maxTokens?: number } = {},
+  ): Promise<{
+    content: string
+    rawContent: unknown
+    stopReason: string
+    toolUses: Array<{ id: string; name: string; input: unknown }>
+    usage: { inputTokens: number; outputTokens: number }
+    model: string
+  }> {
+    await this.ensureCapabilityProbed()
+    const { ai } = this.config
+    const model = opts.model ?? ai.model
+
+    const body: Record<string, unknown> = {
+      model,
+      max_tokens: opts.maxTokens ?? 4096,
+      tools,
+      messages,
+    }
+    if (opts.systemPrompt) body.system = opts.systemPrompt
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${ai.authToken}`,
+      'anthropic-version': '2023-06-01',
+    }
+
+    const res = await fetch(`${ai.baseUrl}/v1/messages`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+    })
+
+    if (!res.ok) {
+      const errText = await res.text()
+      throw new Error(`AI API error ${res.status}: ${errText}`)
+    }
+
+    const data = await res.json() as any
+    const usage = data.usage ?? {}
+    const rawContent = data.content ?? []
+    const textBlocks = (rawContent as any[]).filter((b: any) => b.type === 'text')
+    const toolUseBlocks = (rawContent as any[]).filter((b: any) => b.type === 'tool_use')
+
+    return {
+      content: textBlocks.map((b: any) => b.text).join(''),
+      rawContent,
+      stopReason: data.stop_reason ?? 'end_turn',
+      toolUses: toolUseBlocks.map((b: any) => ({ id: b.id, name: b.name, input: b.input })),
+      usage: { inputTokens: usage.input_tokens ?? 0, outputTokens: usage.output_tokens ?? 0 },
+      model,
+    }
+  }
+
+  /** 流式输出 — AsyncGenerator，每次 yield 一个文本 delta */
+  async *stream(
+    messages: Message[],
+    opts: { systemPrompt?: string; model?: string; maxTokens?: number; signal?: AbortSignal } = {},
+  ): AsyncGenerator<string> {
+    await this.ensureCapabilityProbed()
+    const { ai } = this.config
+    const model = opts.model ?? ai.model
+
+    const body: Record<string, unknown> = {
+      model,
+      max_tokens: opts.maxTokens ?? 4096,
+      stream: true,
+      messages,
+    }
+    if (opts.systemPrompt) body.system = opts.systemPrompt
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${ai.authToken}`,
+      'anthropic-version': '2023-06-01',
+    }
+
+    const res = await fetch(`${ai.baseUrl}/v1/messages`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+      signal: opts.signal,
+    })
+
+    if (!res.ok) {
+      const errText = await res.text()
+      throw new Error(`Stream AI API error ${res.status}: ${errText}`)
+    }
+
+    const reader = res.body?.getReader()
+    if (!reader) throw new Error('No response body for streaming')
+
+    const decoder = new TextDecoder()
+    let buf = ''
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buf += decoder.decode(value, { stream: true })
+        const lines = buf.split('\n')
+        buf = lines.pop() ?? ''
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          const json = line.slice(6).trim()
+          if (json === '[DONE]') return
+          try {
+            const evt = JSON.parse(json)
+            const delta = evt?.delta?.text
+            if (typeof delta === 'string' && delta) yield delta
+          } catch {
+            // ignore malformed SSE lines
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock()
+    }
+  }
+
   // ── OrgNorm 注入 ─────────────────────────────────────────────────────────────
 
   /** 从 Hub 拉取 OrgNorm 的缓存（5 分钟 TTL） */

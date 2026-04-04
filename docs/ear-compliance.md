@@ -64,7 +64,7 @@ Respectfully,
 Mack Ding
 JackClawOS Project Maintainer
 GitHub: https://github.com/DevJackKong
-Email: mack@jackclaw.dev
+Email: JackClaw@jackclaw.ai
 Date: April 4, 2026
 ```
 
@@ -75,7 +75,7 @@ Date: April 4, 2026
 1. 复制上述邮件内容
 2. 同时发送到两个地址：`crypt@bis.doc.gov` 和 `enc@nsa.gov`
 3. 保留发送记录（截图或存档发件箱）
-4. 建议用项目相关邮箱发送（如 mack@jackclaw.dev）
+4. 建议用项目相关邮箱发送（如 JackClaw@jackclaw.ai）
 5. 无需等待回复——这是单向通知，不是审批
 
 **注意：** 每次加密功能有重大变更时（如更换加密算法），建议重新通知。

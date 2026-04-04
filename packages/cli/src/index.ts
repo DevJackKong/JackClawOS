@@ -22,6 +22,7 @@ import { registerTranslate } from './commands/translate';
 import { registerMoltbook } from './commands/moltbook';
 import { registerTask, registerTaskAsk } from './commands/task.js';
 import { registerModelCommand } from './commands/model.js';
+import { registerQuickCommands } from './commands/quick';
 
 const program = new Command();
 
@@ -57,5 +58,6 @@ registerMoltbook(program);
 registerTask(program);
 registerTaskAsk(program);
 registerModelCommand(program);
+registerQuickCommands(program);
 
 program.parse(process.argv);

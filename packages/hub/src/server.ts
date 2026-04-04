@@ -34,6 +34,7 @@ import federationRoute from './routes/federation'
 import receiptRoute from './routes/receipt'
 import traceRoute from './routes/trace'
 import healthRoute from './routes/health'
+import agentCardRoute from './routes/agent-card'
 import profilePageRoute from './routes/profile-page'
 import moltbookRoute from './routes/moltbook'
 import tasksRoute from './routes/tasks'
@@ -190,6 +191,12 @@ export function createServer(): Application {
 
   // Health check & observability (no auth)
   app.use('/health', healthRoute)
+
+  // Agent Card discovery (no auth) — A2A + OpenAgents compatible
+  app.use('/.well-known', agentCardRoute)
+
+  // Agent Card discovery — A2A compatible (no auth)
+  app.use('/.well-known', agentCardRoute)
 
   // Public: node registration (no JWT required — nodes need a token first)
   app.use('/api/register', registerRoute)

@@ -27,6 +27,7 @@ import { pushToNodeWs } from './chat'
 import { pushService } from '../push-service'
 import { messageStore } from '../store/message-store'
 import type { StoredMessage } from '../store/message-store'
+import { quotaManager } from '../quota'
 
 // Lazy import to avoid circular dependencies at module load time
 function getFedMgr() {
@@ -191,6 +192,18 @@ router.post('/send', async (req: Request, res: Response) => {
     }
   }
 
+  // ── Quota check: messages per day ─────────────────────────────────────────
+  const msgUserId = body.fromAgent
+  const msgQuota  = quotaManager.checkQuota(msgUserId, 'maxMessagePerDay')
+  if (!msgQuota.allowed) {
+    return res.status(429).json({
+      error: 'quota_exceeded',
+      message: `每日消息上限已达到 (${msgQuota.limit} 条/天)，剩余: 0`,
+      remaining: 0,
+    })
+  }
+  // ── End quota check ────────────────────────────────────────────────────────
+
   const thread = body.thread ?? getOrCreateThread(body.fromAgent, body.toAgent)
 
   const msg: SocialMessage = {
@@ -219,6 +232,7 @@ router.post('/send', async (req: Request, res: Response) => {
         const result = await fedMgr.routeToRemoteHub(msg.toAgent, msg)
         // Also persist locally so sender has a record
         try { messageStore.saveMessage(socialToStored(msg)) } catch { /* best-effort */ }
+        quotaManager.incrementUsage(msgUserId, 'maxMessagePerDay')
         console.log(`[social] ${msg.fromAgent} → ${msg.toAgent} (federated): ${msg.content.slice(0, 50)}`)
         return res.status(201).json({ status: 'ok', messageId: msg.id, thread, routed: 'federation', federationResult: result })
       } catch (err) {
@@ -236,6 +250,7 @@ router.post('/send', async (req: Request, res: Response) => {
   try { messageStore.saveMessage(socialToStored(msg)) } catch { /* best-effort */ }
 
   deliverSocialMsg(msg)
+  quotaManager.incrementUsage(msgUserId, 'maxMessagePerDay')
 
   console.log(`[social] ${msg.fromAgent} → ${msg.toAgent}: ${msg.content.slice(0, 50)}`)
   return res.status(201).json({ status: 'ok', messageId: msg.id, thread })

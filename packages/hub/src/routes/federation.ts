@@ -1,11 +1,14 @@
 // JackClaw Hub — Federation Routes
 // Inter-hub HTTP endpoints for the federation protocol
 //
-// POST /api/federation/handshake  — Hub-to-hub handshake
-// POST /api/federation/message    — Receive a federated message
-// GET  /api/federation/peers      — List known peer hubs
-// POST /api/federation/discover   — Look up a remote @handle
-// GET  /api/federation/status     — Federation health status
+// POST /api/federation/handshake       — Hub-to-hub handshake
+// POST /api/federation/message         — Receive a federated message
+// GET  /api/federation/peers           — List known peer hubs
+// POST /api/federation/discover        — Look up a remote @handle
+// GET  /api/federation/status          — Federation health status
+// POST /api/federation/blacklist       — Add hub to blacklist (admin)
+// DELETE /api/federation/blacklist/:hubUrl — Remove from blacklist (admin)
+// GET  /api/federation/blacklist       — List blacklisted hubs (admin)
 
 import { Router, Request, Response } from 'express'
 import type { FederationHandshake, FederatedMessage } from '@jackclaw/protocol'
@@ -126,6 +129,48 @@ router.get('/status', (_req: Request, res: Response) => {
     onlinePeers: peers.filter(p => p.status === 'online').length,
     uptime: mgr.uptimeMs,
   })
+})
+
+// ─── POST /blacklist ──────────────────────────────────────────────────────────
+
+router.post('/blacklist', (req: Request, res: Response) => {
+  const { hubUrl, reason } = req.body as { hubUrl?: string; reason?: string }
+
+  if (!hubUrl || typeof hubUrl !== 'string') {
+    return res.status(400).json({ error: 'hubUrl required' })
+  }
+
+  try {
+    const mgr = getFederationManager()
+    mgr.addToBlacklist(hubUrl, reason ?? 'No reason provided')
+    return res.json({ status: 'ok', hubUrl: hubUrl.replace(/\/$/, ''), reason: reason ?? '' })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    return res.status(500).json({ error: 'blacklist_failed', message: msg })
+  }
+})
+
+// ─── DELETE /blacklist/:hubUrl ────────────────────────────────────────────────
+
+router.delete('/blacklist/:hubUrl', (req: Request, res: Response) => {
+  const hubUrl = decodeURIComponent(req.params.hubUrl)
+
+  try {
+    const mgr = getFederationManager()
+    mgr.removeFromBlacklist(hubUrl)
+    return res.json({ status: 'ok', hubUrl })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    return res.status(500).json({ error: 'blacklist_remove_failed', message: msg })
+  }
+})
+
+// ─── GET /blacklist ───────────────────────────────────────────────────────────
+
+router.get('/blacklist', (_req: Request, res: Response) => {
+  const mgr   = getFederationManager()
+  const list  = mgr.listBlacklist()
+  return res.json({ blacklist: list, count: list.length })
 })
 
 export default router

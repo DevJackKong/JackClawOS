@@ -11,6 +11,7 @@
 import { Router, Request, Response } from 'express'
 import fs from 'fs'
 import { fileStore } from '../store/files'
+import { quotaManager } from '../quota'
 
 const router = Router()
 
@@ -175,8 +176,31 @@ router.post('/upload', (req: Request, res: Response): void => {
       return
     }
 
+    // ── Quota check ────────────────────────────────────────────────────────
+    const userId = req.jwtPayload?.nodeId ?? req.jwtPayload?.nodeId ?? 'anonymous'
+
+    const sizeCheck = quotaManager.checkQuota(userId, 'maxFileSize', filePart.data.length)
+    if (!sizeCheck.allowed) {
+      res.status(413).json({ error: 'quota_exceeded', message: `File exceeds maxFileSize limit (${sizeCheck.limit} bytes)` })
+      return
+    }
+
+    const storageCheck = quotaManager.checkQuota(userId, 'maxFileStorage', filePart.data.length)
+    if (!storageCheck.allowed) {
+      res.status(413).json({
+        error: 'quota_exceeded',
+        message: `Storage quota exceeded. Used: ${storageCheck.used} bytes, Limit: ${storageCheck.limit} bytes`,
+        remaining: storageCheck.remaining,
+      })
+      return
+    }
+    // ── End quota check ─────────────────────────────────────────────────────
+
     const mimeType = filePart.mimeType ?? 'application/octet-stream'
     const meta = fileStore.save(filePart.data, filePart.filename, mimeType)
+
+    // Track storage usage
+    quotaManager.incrementUsage(userId, 'maxFileStorage', filePart.data.length)
 
     // 异步生成缩略图（不阻塞响应）
     if (mimeType.startsWith('image/')) {

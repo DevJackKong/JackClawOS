@@ -18,14 +18,37 @@ import type {
 import type { SocialMessage } from '@jackclaw/protocol'
 
 const HUB_DIR = path.join(process.env.HOME || '~', '.jackclaw', 'hub')
-const FEDERATION_FILE = path.join(HUB_DIR, 'federation.json')
+const FEDERATION_FILE   = path.join(HUB_DIR, 'federation.json')
+const BLACKLIST_FILE    = path.join(HUB_DIR, 'federation-blacklist.json')
 const HEALTH_INTERVAL_MS = 60_000  // ping peers every 60 s
 
 // ─── Persistence shape ────────────────────────────────────────────────────────
 
+interface BlacklistEntry {
+  hubUrl:   string
+  reason:   string
+  addedAt:  number
+}
+
 interface FederationStore {
   peers: Record<string, HubPeer>          // keyed by url
   directory: HubDirectory                 // @handle → { hubUrl, lastConfirmed }
+}
+
+// ─── Blacklist helpers ────────────────────────────────────────────────────────
+
+function loadBlacklist(): Record<string, BlacklistEntry> {
+  try {
+    if (fs.existsSync(BLACKLIST_FILE)) {
+      return JSON.parse(fs.readFileSync(BLACKLIST_FILE, 'utf-8')) as Record<string, BlacklistEntry>
+    }
+  } catch { /* ignore */ }
+  return {}
+}
+
+function saveBlacklist(bl: Record<string, BlacklistEntry>): void {
+  fs.mkdirSync(path.dirname(BLACKLIST_FILE), { recursive: true })
+  fs.writeFileSync(BLACKLIST_FILE, JSON.stringify(bl, null, 2), 'utf-8')
 }
 
 function loadStore(): FederationStore {
@@ -233,6 +256,11 @@ export class FederationManager {
    * Returns the inner SocialMessage for local delivery.
    */
   receiveFromRemoteHub(envelope: FederatedMessage): SocialMessage {
+    // Reject messages from blacklisted hubs
+    if (this.isBlacklisted(envelope.fromHub)) {
+      throw new Error(`Rejected message from blacklisted hub: ${envelope.fromHub}`)
+    }
+
     // Update peer's lastSeen
     const peer = this.store.peers[envelope.fromHub]
     if (peer) {
@@ -295,12 +323,18 @@ export class FederationManager {
       throw new Error('Handshake expired (ts too old)')
     }
 
+    const normalizedUrl = handshake.hubUrl.replace(/\/$/, '')
+
+    // Reject blacklisted hubs
+    if (this.isBlacklisted(normalizedUrl)) {
+      throw new Error(`Hub is blacklisted: ${normalizedUrl}`)
+    }
+
     const sigInput = `${handshake.hubUrl}${handshake.publicKey}${handshake.ts}`
     if (!this._verify(sigInput, handshake.signature, handshake.publicKey)) {
       throw new Error('Handshake signature invalid')
     }
 
-    const normalizedUrl = handshake.hubUrl.replace(/\/$/, '')
     const existing = this.store.peers[normalizedUrl]
 
     const peer: HubPeer = {
@@ -317,6 +351,44 @@ export class FederationManager {
 
     console.log(`[federation] Peer registered via handshake: ${normalizedUrl}`)
     return peer
+  }
+
+  // ─── Federation Blacklist ──────────────────────────────────────────────────
+
+  /** Add a hub to the federation blacklist. Removes it from peers as well. */
+  addToBlacklist(hubUrl: string, reason: string): void {
+    const normalized = hubUrl.replace(/\/$/, '')
+    const bl = loadBlacklist()
+    bl[normalized] = { hubUrl: normalized, reason, addedAt: Date.now() }
+    saveBlacklist(bl)
+    // Also remove from peers so we stop pinging it
+    if (this.store.peers[normalized]) {
+      delete this.store.peers[normalized]
+      saveStore(this.store)
+    }
+    console.log(`[federation] Blacklisted hub: ${normalized} — ${reason}`)
+  }
+
+  /** Remove a hub from the blacklist. */
+  removeFromBlacklist(hubUrl: string): void {
+    const normalized = hubUrl.replace(/\/$/, '')
+    const bl = loadBlacklist()
+    if (bl[normalized]) {
+      delete bl[normalized]
+      saveBlacklist(bl)
+      console.log(`[federation] Removed from blacklist: ${normalized}`)
+    }
+  }
+
+  /** Return true if the hub URL is on the blacklist. */
+  isBlacklisted(hubUrl: string): boolean {
+    const normalized = hubUrl.replace(/\/$/, '')
+    return normalized in loadBlacklist()
+  }
+
+  /** List all blacklisted hubs. */
+  listBlacklist(): BlacklistEntry[] {
+    return Object.values(loadBlacklist())
   }
 
   // ─── Health check ──────────────────────────────────────────────────────────

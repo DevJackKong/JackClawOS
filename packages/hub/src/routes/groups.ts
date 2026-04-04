@@ -24,6 +24,7 @@ import { Router, Request, Response } from 'express'
 import { groupStore } from '../store/groups'
 import { pushToNodeWs } from './chat'
 import { ChatStore } from '../store/chat'
+import { quotaManager } from '../quota'
 
 const router = Router()
 
@@ -93,6 +94,22 @@ router.post('/create', (req: Request, res: Response) => {
   if (type && type !== 'group' && type !== 'channel') {
     res.status(400).json({ error: 'type must be group or channel' }); return
   }
+
+  // ── Quota check: maxGroups per node ────────────────────────────────────────
+  const existingGroups = groupStore.listForMember(nodeId)
+  const createdByNode  = existingGroups.filter(g => g.createdBy === nodeId)
+  const groupQuota     = quotaManager.checkQuota(nodeId, 'maxGroups', 1)
+  // Sync stored count so the quota reflects reality
+  quotaManager.setUsage(nodeId, 'maxGroups', createdByNode.length)
+  if (!groupQuota.allowed || createdByNode.length >= groupQuota.limit) {
+    res.status(429).json({
+      error: 'quota_exceeded',
+      message: `已达到群组上限 (${groupQuota.limit})`,
+      limit: groupQuota.limit,
+      used: createdByNode.length,
+    }); return
+  }
+  // ── End quota check ─────────────────────────────────────────────────────────
 
   const group = groupStore.create({
     name,

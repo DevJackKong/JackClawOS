@@ -35,6 +35,7 @@ import receiptRoute from './routes/receipt'
 import traceRoute from './routes/trace'
 import healthRoute from './routes/health'
 import agentCardRoute from './routes/agent-card'
+import pluginsRoute from './routes/plugins'
 import profilePageRoute from './routes/profile-page'
 import moltbookRoute from './routes/moltbook'
 import tasksRoute from './routes/tasks'
@@ -195,9 +196,6 @@ export function createServer(): Application {
   // Agent Card discovery (no auth) — A2A + OpenAgents compatible
   app.use('/.well-known', agentCardRoute)
 
-  // Agent Card discovery — A2A compatible (no auth)
-  app.use('/.well-known', agentCardRoute)
-
   // Public: node registration (no JWT required — nodes need a token first)
   app.use('/api/register', registerRoute)
 
@@ -246,6 +244,7 @@ export function createServer(): Application {
   app.use('/api/moltbook', moltbookRoute)     // Moltbook social integration
   app.use('/api/tasks', tasksRoute)           // async task queue: submit, status, cancel
   app.use('/api/presence', presenceRoute)     // GET /:handle, GET /online — presence queries
+  app.use('/api/plugins', pluginsRoute)       // GET / — list plugins; GET /stats; GET /events
 
   // SPA fallback — serve dashboard index.html for all non-API GET requests
   app.get('*', (req: Request, res: Response, next: NextFunction) => {

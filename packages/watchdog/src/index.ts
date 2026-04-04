@@ -14,3 +14,7 @@ export {
   getLatestSnapshot,
 } from './monitor'
 export { WatchdogAlerter, configureAlerter, getAlerter } from './alerts'
+export { AnomalyDetector, anomalyDetector } from './anomaly-detector'
+export type { AnomalyAlert, AnomalySeverity } from './anomaly-detector'
+export { AuditLog, auditLog } from './audit-log'
+export type { AuditEntry, AuditAction } from './audit-log'

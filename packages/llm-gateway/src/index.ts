@@ -60,6 +60,9 @@ export { OllamaProvider }   from './providers/ollama.js'
 export { ModelRouter } from './router.js'
 export type { RouteRequest, ModelInfo } from './router.js'
 
+export { CostTracker, costTracker } from './cost-tracker.js'
+export type { UsageRecord, CostSummary } from './cost-tracker.js'
+
 export {
   loadLLMConfig,
   saveLLMConfig,
@@ -67,6 +70,11 @@ export {
   getLLMConfigValue,
 } from './config.js'
 export type { LLMConfig, LLMProviderEntry } from './config.js'
+
+// ─── Cost Tracker ────────────────────────────────────────────────────
+
+export { CostTracker, costTracker } from './cost-tracker.js'
+export type { UsageRecord, CostSummary } from './cost-tracker.js'
 
 // ─── Quick factory ───────────────────────────────────────────────────
 

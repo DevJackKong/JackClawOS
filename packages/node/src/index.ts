@@ -23,6 +23,7 @@ import { getOwnerMemory } from './owner-memory'
 import { MemoryManager, MemDirSync } from '@jackclaw/memory'
 import { createNodeGateway } from './llm-gateway'
 import { SocialHandler } from './social-handler'
+import { AiSecretary } from './ai-secretary'
 
 async function main() {
   console.log('🦞 JackClaw Node starting...')
@@ -60,6 +61,9 @@ async function main() {
     humanId: (config as any).humanId,
   })
 
+  // 1d. AI Secretary — initialized after aiClient; messages arrive async so this is safe
+  let secretary: AiSecretary | null = null
+
   chatClient.onMessage((msg) => {
     // Route social events to SocialHandler first
     if (msg.type === 'social' || msg.type === 'social_contact_request' || msg.type === 'social_contact_response') {
@@ -74,6 +78,11 @@ async function main() {
       )
     } else if (msg.type === 'human') {
       ownerMemory.observeMessage({ content: msg.content, direction: 'incoming', type: msg.type })
+      if (secretary) {
+        // Secretary decides whether/how to notify owner
+        secretary.handleIncoming({ id: msg.id, from: msg.from, content: msg.content, type: msg.type, ts: Date.now() })
+          .catch((err: Error) => console.error('[secretary] handleIncoming error:', err.message))
+      }
     }
   })
 
@@ -88,6 +97,19 @@ async function main() {
   // 3. Init AI client + Harness runner
   const aiClient = getAiClient(identity.nodeId, config)
   console.log('[ai] AiClient initialized — cache probe will run on first call')
+
+  // 3a. Init AI Secretary
+  secretary = new AiSecretary({
+    aiClient,
+    ownerMemory,
+    notifyOwner: (msg, priority) => {
+      console.log(`[secretary] 📬 [${priority}] from=${msg.from}: ${msg.content.slice(0, 80)}`)
+    },
+    sendReply: async (to, content) => {
+      chatClient.send(to, content, 'human')
+    },
+  })
+  console.log(`[secretary] Initialized — mode: ${secretary.getMode()}`)
 
   // 注册 Harness runner（运行时注入，编译期无跨包依赖）
   try {

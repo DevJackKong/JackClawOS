@@ -12,6 +12,9 @@
 import type { SocialMessage, ContactRequest } from '@jackclaw/protocol'
 import { MessageFilter } from './ai-filter'
 import { getEmotionSensor, type Sentiment } from './ai-emotion'
+import type { AiClient } from './ai-client'
+import type { OwnerMemory } from './owner-memory'
+import { getTranslator } from './ai-translator'
 
 export interface SocialHandlerOptions {
   nodeId: string
@@ -21,6 +24,10 @@ export interface SocialHandlerOptions {
   webhookUrl?: string
   /** 主人 humanId，用于推送目标 */
   humanId?: string
+  /** AiClient 实例，用于翻译 */
+  aiClient?: AiClient
+  /** OwnerMemory 实例，用于记录情绪模式 */
+  ownerMemory?: OwnerMemory
 }
 
 export class SocialHandler {
@@ -47,7 +54,7 @@ export class SocialHandler {
     }
   }
 
-  private _onSocialMessage(msg: SocialMessage): void {
+  private async _onSocialMessage(msg: SocialMessage): Promise<void> {
     const from = msg.fromAgent
     const content = msg.content.slice(0, 120)
 
@@ -64,8 +71,31 @@ export class SocialHandler {
     const threadId = msg.thread ?? msg.id
     this.emotion.trackMoodHistory(threadId, emotion.sentiment, emotion.confidence)
 
+    // Persist emotion pattern to OwnerMemory (background contact profile)
+    this.opts.ownerMemory?.recordEmotionPattern({
+      sentiment: emotion.sentiment,
+      confidence: emotion.confidence,
+      keywords: emotion.keywords,
+      threadId,
+    })
+
     // Build emotion hint for owner notification
     const emotionHint = this._emotionHint(emotion.sentiment)
+
+    // Auto-translate incoming message if enabled
+    let displayContent = msg.content
+    if (this.opts.aiClient) {
+      try {
+        const translator = getTranslator(this.opts.aiClient)
+        const translated = await translator.translateMessage(msg)
+        if (translated) {
+          displayContent = translated.combined
+          console.log(`[social] 🌐 Translated ${translated.fromLang} → ${translated.toLang}`)
+        }
+      } catch (err) {
+        console.warn(`[social] Translation failed: ${(err as Error).message}`)
+      }
+    }
 
     if (result.action === 'flag') {
       console.log(`[social] ⚠️  Suspicious message from ${from}: ${content} [${result.reason}]`)
@@ -73,7 +103,7 @@ export class SocialHandler {
         this._pushToOwner({
           type: 'social_message',
           from,
-          content: msg.content,
+          content: displayContent,
           messageId: msg.id,
           thread: msg.thread,
           ts: msg.ts,
@@ -93,7 +123,7 @@ export class SocialHandler {
       this._pushToOwner({
         type: 'social_message',
         from,
-        content: msg.content,
+        content: displayContent,
         messageId: msg.id,
         thread: msg.thread,
         ts: msg.ts,
@@ -159,13 +189,38 @@ export class SocialHandler {
 
   /**
    * 主人回复某条社交消息（通过 Hub /api/social/reply 转发）
+   * 如果对方语言与主人语言不同，且 autoTranslate 开启，自动翻译后发送
    */
   async ownerReply(opts: {
     replyToId: string
     content: string
     fromHuman: string
     fromAgent: string
+    /** 对方原始消息，用于检测对方语言并自动翻译主人回复 */
+    originalMessage?: SocialMessage
   }): Promise<void> {
+    let sendContent = opts.content
+
+    if (this.opts.aiClient && opts.originalMessage) {
+      try {
+        const translator = getTranslator(this.opts.aiClient)
+        const pref = translator.getPreference()
+
+        if (pref.autoTranslate) {
+          const theirLang = translator.detectLanguage(opts.originalMessage.content)
+          const myDetected = translator.detectLanguage(opts.content)
+
+          if (theirLang !== 'unknown' && theirLang !== myDetected) {
+            const translated = await translator.translate(opts.content, myDetected, theirLang)
+            sendContent = translated
+            console.log(`[social] 🌐 Reply translated ${myDetected} → ${theirLang}`)
+          }
+        }
+      } catch (err) {
+        console.warn(`[social] Reply translation failed: ${(err as Error).message}`)
+      }
+    }
+
     const res = await fetch(`${this.opts.hubUrl}/api/social/reply`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -173,7 +228,7 @@ export class SocialHandler {
         replyToId: opts.replyToId,
         fromHuman: opts.fromHuman,
         fromAgent: opts.fromAgent,
-        content: opts.content,
+        content: sendContent,
         type: 'text',
       }),
     })

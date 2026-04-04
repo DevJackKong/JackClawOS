@@ -222,6 +222,34 @@ export class OwnerMemory {
     this.scheduleSave()
   }
 
+  /** 记录对话对象的情绪模式（供 EmotionSensor 调用） */
+  recordEmotionPattern(opts: {
+    sentiment: 'positive' | 'negative' | 'neutral' | 'urgent'
+    confidence: number
+    keywords?: string[]
+    threadId?: string
+  }): void {
+    const now = Date.now()
+    const ttl = opts.sentiment === 'neutral' ? 0 : 6 * 60 * 60 * 1000  // 6h TTL，中性不过期
+
+    const keywordStr = opts.keywords?.length ? `，关键词：${opts.keywords.slice(0, 5).join('/')}` : ''
+    const contentMap = {
+      positive: `对话情绪积极${keywordStr}`,
+      negative: `对话情绪负面${keywordStr}`,
+      urgent:   `对话有紧迫感${keywordStr}`,
+      neutral:  `对话情绪平稳`,
+    }
+
+    this.upsert({
+      type: 'emotional-state',
+      content: contentMap[opts.sentiment],
+      confidence: opts.confidence,
+      source: 'inferred',
+      expiresAt: ttl > 0 ? now + ttl : undefined,
+      tags: ['emotion-sensor', opts.sentiment, ...(opts.threadId ? [`thread:${opts.threadId}`] : [])],
+    })
+  }
+
   /** 记录里程碑 */
   recordMilestone(content: string): void {
     this.upsert({

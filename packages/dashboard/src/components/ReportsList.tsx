@@ -58,7 +58,7 @@ export const ReportsList: React.FC<Props> = ({ token }) => {
           {roles.map(role => (
             <div key={role} className="report-group">
               <div className="report-group-header">{role}</div>
-              {summary.byRole[role].nodes.map((n, i) => (
+              {summary.byRole[role]?.nodes?.map((n, i) => (
                 <div key={i} className="report-node">
                   <div className="report-node-name">{n.name}</div>
                   <div className="report-node-summary">{n.summary}</div>

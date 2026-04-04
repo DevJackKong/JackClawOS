@@ -35,7 +35,7 @@ jobs:
         run: npm run typecheck --if-present
 
       - name: Run E2E tests
-        run: node tests/e2e.js
+        run: node tests/run-all.js
 
       - name: Check CLI works
         run: node packages/cli/dist/index.js --version

@@ -10,7 +10,7 @@
   ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",
-    "test": "npm run test --workspaces --if-present",
+    "test": "node tests/run-all.js",
     "dev": "concurrently \"npm run dev --workspace=packages/hub\" \"npm run dev --workspace=packages/node\"",
     "dev:hub": "npm run dev --workspace=packages/hub",
     "dev:node": "npm run dev --workspace=packages/node",

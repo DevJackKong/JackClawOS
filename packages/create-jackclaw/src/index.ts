@@ -106,8 +106,8 @@ function genPackageJson(name: string, safeName: string, role: string): string {
       typecheck: 'tsc --noEmit',
     },
     dependencies: {
-      '@jackclaw/node': '^0.1.0',
-      '@jackclaw/sdk': '^0.1.0',
+      '@jackclaw/node': '^0.2.0',
+      '@jackclaw/sdk': '^0.2.0',
     },
     devDependencies: {
       '@types/node': '^20.0.0',
@@ -148,6 +148,12 @@ function genSrcIndex(name: string, role: string): string {
  *
  * This plugin registers basic commands that your node exposes
  * to the Hub and other nodes in the team.
+ *
+ * Features:
+ *   - /ping, /status, /hello commands
+ *   - /cost — LLM usage cost summary
+ *   - Daily report schedule
+ *   - Event hooks for message tracking
  */
 export default definePlugin({
   name: '${name}',
@@ -159,7 +165,7 @@ export default definePlugin({
      * /ping — Simple health check.
      */
     ping: async (ctx) => {
-      return { text: \`🦞 pong from \${ctx.node.name} (role: ${role})\` }
+      return { text: \\\`🦞 pong from \\\${ctx.node.name} (role: ${role})\\\` }
     },
 
     /**
@@ -167,11 +173,11 @@ export default definePlugin({
      */
     status: async (ctx) => {
       return {
-        text: \`Node \${ctx.node.name} is online\`,
+        text: \\\`Node \\\${ctx.node.name} is online\\\`,
         items: [
           { label: 'Role', value: '${role}' },
           { label: 'Version', value: ctx.plugin.version },
-          { label: 'Uptime', value: \`\${Math.floor(process.uptime())}s\` },
+          { label: 'Uptime', value: \\\`\\\${Math.floor(process.uptime())}s\\\` },
         ],
       }
     },
@@ -181,7 +187,41 @@ export default definePlugin({
      */
     hello: async (ctx) => {
       const who = ctx.args[0] || ctx.userName || 'world'
-      return { text: \`👋 Hello, \${who}! I'm \${ctx.node.name}.\` }
+      return { text: \\\`👋 Hello, \\\${who}! I'm \\\${ctx.node.name}.\\\` }
+    },
+
+    /**
+     * /cost — Show LLM usage cost summary (if gateway available).
+     */
+    cost: async (ctx) => {
+      try {
+        const stats = await ctx.hub.get('/api/plugins/stats')
+        return {
+          text: '💰 LLM Cost Summary',
+          items: [
+            { label: 'Total calls', value: stats?.totalCalls ?? 'N/A' },
+            { label: 'Est. cost', value: stats?.totalCostUSD ? \\\`$\\\${stats.totalCostUSD}\\\` : 'N/A' },
+          ],
+        }
+      } catch {
+        return { text: 'Cost tracking not available on this Hub.' }
+      }
+    },
+  },
+
+  events: {
+    /**
+     * Track outgoing messages for anomaly detection.
+     */
+    'message:send': async (ctx, event) => {
+      ctx.log(\\\`📤 Message sent to \\\${event.to}\\\`)
+    },
+
+    /**
+     * React to plugin lifecycle.
+     */
+    'plugin:loaded': async (ctx) => {
+      ctx.log(\\\`✅ Plugin \\\${ctx.plugin.name} loaded\\\`)
     },
   },
 
@@ -193,7 +233,7 @@ export default definePlugin({
       cron: '0 8 * * *',
       handler: async (ctx) => {
         await ctx.report({
-          summary: \`Daily report from \${ctx.node.name}\`,
+          summary: \\\`Daily report from \\\${ctx.node.name}\\\`,
           items: [
             { label: 'Status', value: 'healthy' },
             { label: 'Tasks completed', value: 0 },

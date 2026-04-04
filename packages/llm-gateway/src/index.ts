@@ -55,7 +55,7 @@ export { ZhipuProvider }    from './providers/zhipu.js'
 export { BaichuanProvider } from './providers/baichuan.js'
 export { OllamaProvider }   from './providers/ollama.js'
 
-// ─── Router & Config ─────────────────────────────────────────────────
+// ─── Router, Config & Cost ───────────────────────────────────────────
 
 export { ModelRouter } from './router.js'
 export type { RouteRequest, ModelInfo } from './router.js'
@@ -70,11 +70,6 @@ export {
   getLLMConfigValue,
 } from './config.js'
 export type { LLMConfig, LLMProviderEntry } from './config.js'
-
-// ─── Cost Tracker ────────────────────────────────────────────────────
-
-export { CostTracker, costTracker } from './cost-tracker.js'
-export type { UsageRecord, CostSummary } from './cost-tracker.js'
 
 // ─── Quick factory ───────────────────────────────────────────────────
 

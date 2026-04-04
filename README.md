@@ -3,7 +3,8 @@
 [![Build](https://github.com/DevJackKong/JackClawOS/actions/workflows/ci.yml/badge.svg)](https://github.com/DevJackKong/JackClawOS/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](https://nodejs.org)
-[![E2E](https://img.shields.io/badge/e2e-158%20assertions-success)](tests/e2e.js)
+[![Unit Tests](https://img.shields.io/badge/unit-108%20passed-success)](packages/)
+[![E2E](https://img.shields.io/badge/e2e-153%20passed-success)](tests/e2e.js)
 
 > **30 seconds to your AI company** 🦞
 

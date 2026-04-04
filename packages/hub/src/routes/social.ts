@@ -25,6 +25,8 @@ import type {
 } from '@jackclaw/protocol'
 import { pushToNodeWs } from './chat'
 import { pushService } from '../push-service'
+import { messageStore } from '../store/message-store'
+import type { StoredMessage } from '../store/message-store'
 
 // Lazy import to avoid circular dependencies at module load time
 function getFedMgr() {
@@ -42,7 +44,6 @@ const router = Router()
 // ─── Storage ──────────────────────────────────────────────────────────────────
 
 const HUB_DIR = path.join(process.env.HOME || '~', '.jackclaw', 'hub')
-const SOCIAL_MESSAGES_FILE  = path.join(HUB_DIR, 'social-messages.json')
 const SOCIAL_CONTACTS_FILE  = path.join(HUB_DIR, 'social-contacts.json')
 const SOCIAL_REQUESTS_FILE  = path.join(HUB_DIR, 'social-requests.json')
 const SOCIAL_PROFILES_FILE  = path.join(HUB_DIR, 'social-profiles.json')
@@ -60,13 +61,46 @@ function saveJSON(file: string, data: unknown): void {
   fs.writeFileSync(file, JSON.stringify(data, null, 2), 'utf-8')
 }
 
-// In-memory caches
-let messages:  SocialMessage[]                         = loadJSON(SOCIAL_MESSAGES_FILE, [])
+// In-memory caches (contacts, requests, profiles remain file-backed; messages → SQLite)
 let contacts:  Record<string, string[]>                = loadJSON(SOCIAL_CONTACTS_FILE, {})  // handle → handle[]
 let requests:  Record<string, ContactRequest>          = loadJSON(SOCIAL_REQUESTS_FILE, {})
 let profiles:  Record<string, SocialProfile>           = loadJSON(SOCIAL_PROFILES_FILE, {})
 // 离线队列：agentHandle → SocialMessage[]（目标 node 离线时暂存）
 let offlineQueue: Record<string, SocialMessage[]>      = loadJSON(SOCIAL_QUEUE_FILE, {})
+
+// ─── SocialMessage ↔ StoredMessage adapters ───────────────────────────────────
+
+function socialToStored(msg: SocialMessage): StoredMessage {
+  return {
+    id:        msg.id,
+    threadId:  msg.thread,
+    fromAgent: msg.fromAgent,
+    toAgent:   msg.toAgent,
+    fromHuman: msg.fromHuman,
+    content:   msg.content,
+    type:      msg.type,
+    replyTo:   msg.replyTo,
+    status:    'sent',
+    ts:        msg.ts,
+    encrypted: msg.encrypted,
+  }
+}
+
+function storedToSocial(s: StoredMessage): SocialMessage {
+  return {
+    id:        s.id,
+    fromHuman: s.fromHuman ?? '',
+    fromAgent: s.fromAgent,
+    toAgent:   s.toAgent,
+    content:   s.content,
+    type:      s.type as SocialMessage['type'],
+    replyTo:   s.replyTo,
+    thread:    s.threadId,
+    ts:        s.ts,
+    encrypted: s.encrypted,
+    signature: '',
+  }
+}
 
 // ─── Directory lookup helper ──────────────────────────────────────────────────
 
@@ -81,13 +115,14 @@ function lookupNodeId(handle: string): string | null {
 // ─── Thread helper ────────────────────────────────────────────────────────────
 
 function getOrCreateThread(a: string, b: string): string {
-  // 统一排序，保证 a↔b 和 b↔a 是同一个 thread
   const key = [a, b].sort().join('↔')
-  // 查找是否已有相同 participants 的 thread
-  const existing = messages.find(m => m.thread && [a, b].sort().every(
-    (h, i) => m.thread!.startsWith(key)
-  ))
-  if (existing?.thread) return existing.thread
+  // Check messageStore for an existing thread between these two participants
+  const recent = messageStore.getMessagesByParticipant(a, 10, 0)
+  const existing = recent.find(m =>
+    m.threadId &&
+    ((m.fromAgent === a && m.toAgent === b) || (m.fromAgent === b && m.toAgent === a)),
+  )
+  if (existing?.threadId) return existing.threadId
   return `thread-${key}-${Date.now()}`
 }
 
@@ -127,9 +162,8 @@ function deliverSocialMsg(msg: SocialMessage): void {
  * Exported so routes/federation.ts can call it without circular imports at load time.
  */
 export function deliverFederatedMessage(msg: SocialMessage): void {
-  // Persist it in local message store first
-  messages.push(msg)
-  saveJSON(SOCIAL_MESSAGES_FILE, messages)
+  // Persist to MessageStore first
+  try { messageStore.saveMessage(socialToStored(msg)) } catch { /* best-effort */ }
   // Then attempt local WebSocket delivery / offline queue
   deliverSocialMsg(msg)
   console.log(`[social/fed] Federated delivery: ${msg.fromAgent} → ${msg.toAgent}`)
@@ -184,8 +218,7 @@ router.post('/send', async (req: Request, res: Response) => {
       try {
         const result = await fedMgr.routeToRemoteHub(msg.toAgent, msg)
         // Also persist locally so sender has a record
-        messages.push(msg)
-        saveJSON(SOCIAL_MESSAGES_FILE, messages)
+        try { messageStore.saveMessage(socialToStored(msg)) } catch { /* best-effort */ }
         console.log(`[social] ${msg.fromAgent} → ${msg.toAgent} (federated): ${msg.content.slice(0, 50)}`)
         return res.status(201).json({ status: 'ok', messageId: msg.id, thread, routed: 'federation', federationResult: result })
       } catch (err) {
@@ -200,8 +233,7 @@ router.post('/send', async (req: Request, res: Response) => {
     // No federation manager — fall through to offline queue
   }
 
-  messages.push(msg)
-  saveJSON(SOCIAL_MESSAGES_FILE, messages)
+  try { messageStore.saveMessage(socialToStored(msg)) } catch { /* best-effort */ }
 
   deliverSocialMsg(msg)
 
@@ -308,15 +340,13 @@ router.get('/messages', (req: Request, res: Response) => {
   const { agentHandle, limit: limitStr, offset: offsetStr } = req.query as Record<string, string>
   if (!agentHandle) return res.status(400).json({ error: 'agentHandle required' })
 
-  const limit  = parseInt(limitStr ?? '20', 10)
-  const offset = parseInt(offsetStr ?? '0', 10)
+  const limit  = parseInt(limitStr  ?? '20', 10)
+  const offset = parseInt(offsetStr ?? '0',  10)
 
-  const inbox = messages
-    .filter(m => m.toAgent === agentHandle)
-    .sort((a, b) => b.ts - a.ts)
-    .slice(offset, offset + limit)
+  const stored = messageStore.getInbox(agentHandle, limit, offset)
+  const inbox  = stored.map(storedToSocial)
 
-  return res.json({ messages: inbox, count: inbox.length, total: messages.filter(m => m.toAgent === agentHandle).length })
+  return res.json({ messages: inbox, count: inbox.length })
 })
 
 // ─── POST /profile ────────────────────────────────────────────────────────────
@@ -371,7 +401,7 @@ router.post('/reply', (req: Request, res: Response) => {
     return res.status(400).json({ error: 'missing_fields', required: ['replyToId', 'fromHuman', 'fromAgent', 'content'] })
   }
 
-  const original = messages.find(m => m.id === replyToId)
+  const original = messageStore.getMessage(replyToId)
   if (!original) return res.status(404).json({ error: 'original_message_not_found' })
 
   // 目标：原消息的发送方（如果我是原消息的 toAgent，那我在回复发送方）
@@ -385,14 +415,13 @@ router.post('/reply', (req: Request, res: Response) => {
     content,
     type: type ?? 'text',
     replyTo: replyToId,
-    thread: original.thread,
+    thread: original.threadId,
     ts: Date.now(),
     encrypted: false,
     signature: '',
   }
 
-  messages.push(msg)
-  saveJSON(SOCIAL_MESSAGES_FILE, messages)
+  try { messageStore.saveMessage(socialToStored(msg)) } catch { /* best-effort */ }
 
   deliverSocialMsg(msg)
 
@@ -407,7 +436,8 @@ router.get('/threads', (req: Request, res: Response) => {
   if (!agentHandle) return res.status(400).json({ error: 'agentHandle required' })
 
   // 找出所有涉及该 agent 的消息
-  const myMsgs = messages.filter(m => m.fromAgent === agentHandle || m.toAgent === agentHandle)
+  const stored = messageStore.getMessagesByParticipant(agentHandle, 1000, 0)
+  const myMsgs = stored.map(storedToSocial)
 
   // 按 thread 分组
   const threadMap = new Map<string, SocialThread>()

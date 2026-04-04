@@ -186,6 +186,24 @@ export const api = {
   health: (): Promise<HealthResponse> =>
     req(`${BASE}/health`),
 
+  healthDetailed: (): Promise<any> =>
+    req(`${BASE}/health/detailed`),
+
+  metrics: (): Promise<string> =>
+    fetch(`${BASE}/health/metrics`).then(r => r.text()),
+
+  plugins: (token: string): Promise<{ plugins: any[]; stats: any }> =>
+    req(`${BASE}/api/plugins`, { headers: authHeaders(token) }),
+
+  pluginStats: (token: string): Promise<any> =>
+    req(`${BASE}/api/plugins/stats`, { headers: authHeaders(token) }),
+
+  pluginEvents: (token: string): Promise<{ events: any[] }> =>
+    req(`${BASE}/api/plugins/events`, { headers: authHeaders(token) }),
+
+  agentCard: (): Promise<any> =>
+    req(`${BASE}/.well-known/agents.json`),
+
   nodes: (token: string): Promise<NodesResponse> =>
     req(`${BASE}/api/nodes`, { headers: authHeaders(token) }),
 

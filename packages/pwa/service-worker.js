@@ -2,7 +2,7 @@
 // 功能：离线缓存 + Web Push 推送通知
 // 版本管理：更新 CACHE_VERSION 触发重新安装
 
-const CACHE_VERSION = 'v1'
+const CACHE_VERSION = 'v2'
 const STATIC_CACHE  = `jackclaw-static-${CACHE_VERSION}`
 const API_CACHE     = `jackclaw-api-${CACHE_VERSION}`
 const PUSH_CACHE    = `jackclaw-push-${CACHE_VERSION}`

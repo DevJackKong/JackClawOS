@@ -1,12 +1,14 @@
-// App.tsx — Tab navigation integrating NodeList, ChatPanel, TokenStats
+// App.tsx — Tab navigation integrating NodeList, ChatPanel, TokenStats, ReportsList, PlanViewer
 
 import React, { useEffect, useState } from 'react';
 import { api } from './api.js';
 import { NodeList } from './components/NodeList.js';
 import { ChatPanel } from './components/ChatPanel.js';
 import { TokenStats } from './components/TokenStats.js';
+import { ReportsList } from './components/ReportsList.js';
+import { PlanViewer } from './components/PlanViewer.js';
 
-type Tab = 'nodes' | 'chat' | 'stats';
+type Tab = 'nodes' | 'chat' | 'reports' | 'plan' | 'stats';
 type HubStatus = 'checking' | 'ok' | 'error';
 
 const LS_URL   = 'jackclaw_hub_url';
@@ -17,9 +19,11 @@ function getStored(key: string): string {
 }
 
 const TABS: { id: Tab; label: string; icon: string }[] = [
-  { id: 'nodes', label: '节点', icon: '⬡' },
-  { id: 'chat',  label: '对话', icon: '◈' },
-  { id: 'stats', label: '统计', icon: '◐' },
+  { id: 'nodes',   label: '节点', icon: '⬡' },
+  { id: 'chat',    label: '对话', icon: '◈' },
+  { id: 'reports', label: '汇报', icon: '◉' },
+  { id: 'plan',    label: '计划', icon: '◐' },
+  { id: 'stats',   label: '统计', icon: '◑' },
 ];
 
 const App: React.FC = () => {
@@ -156,9 +160,11 @@ const App: React.FC = () => {
           </div>
         ) : (
           <>
-            {tab === 'nodes' && <NodeList token={token} />}
-            {tab === 'chat'  && <ChatPanel token={token} nodeId={selectedNode} />}
-            {tab === 'stats' && <TokenStats token={token} />}
+            {tab === 'nodes'   && <NodeList token={token} />}
+            {tab === 'chat'    && <ChatPanel token={token} nodeId={selectedNode} />}
+            {tab === 'reports' && <ReportsList token={token} />}
+            {tab === 'plan'    && <PlanViewer token={token} />}
+            {tab === 'stats'   && <TokenStats token={token} />}
           </>
         )}
       </main>

@@ -233,3 +233,71 @@ input, textarea { font-family: inherit; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #444d56; }
+
+/* ── ReportsList ────────────────────────────────────────────────────────────── */
+.reports-list { display: flex; flex-direction: column; gap: 16px; }
+.reports-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+.reports-date  { font-size: 13px; color: var(--muted); }
+.reports-count { font-size: 13px; color: var(--primary); font-weight: 600; }
+
+.reports-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+
+.report-group { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.report-group-header { background: #21262d; padding: 8px 14px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--primary); border-bottom: 1px solid var(--border); }
+
+.report-node { padding: 10px 14px; border-bottom: 1px solid var(--border); }
+.report-node:last-child { border-bottom: none; }
+.report-node-name    { font-weight: 500; font-size: 13px; margin-bottom: 4px; }
+.report-node-summary { font-size: 13px; color: #c4c9d4; line-height: 1.55; }
+.report-node-time    { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+/* ── Mobile responsive ──────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .app-header {
+    flex-wrap: wrap;
+    height: auto;
+    padding: 8px 12px;
+    gap: 8px;
+  }
+  .header-brand { order: 1; }
+  .header-right  { order: 2; margin-left: auto; }
+  .tab-nav {
+    order: 3;
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    gap: 2px;
+    padding-bottom: 2px;
+  }
+  .tab-nav::-webkit-scrollbar { display: none; }
+  .tab-btn { flex-shrink: 0; }
+  .app-main { padding: 12px; }
+  .node-selector-bar { flex-wrap: wrap; }
+  .ns-input { max-width: 100%; width: 100%; }
+}
+
+@media (max-width: 560px) {
+  /* Chat: stack sidebar on top, horizontal scroll */
+  .chat-panel { flex-direction: column; height: auto; min-height: 0; }
+  .thread-sidebar {
+    width: 100%; height: auto; max-height: 140px;
+    border-right: none; border-bottom: 1px solid var(--border);
+  }
+  .thread-list { overflow-x: auto; display: flex; flex-direction: row; -webkit-overflow-scrolling: touch; }
+  .thread-item { min-width: 130px; flex-shrink: 0; border-bottom: none; border-right: 1px solid var(--border); }
+  .chat-main { height: calc(100vh - 320px); min-height: 280px; }
+
+  /* Stats: 2-col grid */
+  .stats-grid { grid-template-columns: repeat(2, 1fr); }
+
+  /* Reports: single col */
+  .reports-grid { grid-template-columns: 1fr; }
+  .nodes-grid   { grid-template-columns: 1fr; }
+
+  /* Config drawer */
+  .config-token { max-width: 100%; }
+
+  /* Header: hide brand tag on tiny screens */
+  .brand-tag { display: none; }
+}

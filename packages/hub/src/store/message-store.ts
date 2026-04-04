@@ -8,6 +8,7 @@
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
+import initSqlJs from 'sql.js'
 
 const HUB_DIR = path.join(os.homedir(), '.jackclaw', 'hub')
 export const DB_PATH = path.join(HUB_DIR, 'messages.db')
@@ -99,30 +100,73 @@ const CREATE_STMTS = [
   )`,
 ]
 
-class SqliteMessageStore {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private db: any
+/**
+ * sql.js helper: run a query and return rows as Record<string, unknown>[]
+ */
+function sqlAll(db: InstanceType<import('sql.js').SqlJsStatic['Database']>, sql: string, params: unknown[] = []): Record<string, unknown>[] {
+  const stmt = db.prepare(sql)
+  if (params.length) stmt.bind(params as (string | number | null | Uint8Array)[])
+  const results: Record<string, unknown>[] = []
+  while (stmt.step()) {
+    const row = stmt.getAsObject()
+    results.push(row as Record<string, unknown>)
+  }
+  stmt.free()
+  return results
+}
 
-  constructor(dbPath: string) {
+function sqlGet(db: InstanceType<import('sql.js').SqlJsStatic['Database']>, sql: string, params: unknown[] = []): Record<string, unknown> | undefined {
+  const rows = sqlAll(db, sql, params)
+  return rows[0]
+}
+
+function sqlRun(db: InstanceType<import('sql.js').SqlJsStatic['Database']>, sql: string, params: unknown[] = []): void {
+  db.run(sql, params as (string | number | null | Uint8Array)[])
+}
+
+class SqliteMessageStore {
+  private db!: InstanceType<import('sql.js').SqlJsStatic['Database']>
+  private dbPath: string
+  private _saveTimer: NodeJS.Timeout | null = null
+  private _dirty = false
+
+  constructor(dbPath: string, dbInstance: InstanceType<import('sql.js').SqlJsStatic['Database']>) {
+    this.dbPath = dbPath
+    this.db = dbInstance
     fs.mkdirSync(path.dirname(dbPath), { recursive: true })
-    // Dynamic require so missing native module triggers JSONL fallback
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const Database = require('better-sqlite3') as typeof import('better-sqlite3')
-    this.db = new Database(dbPath)
-    this.db.pragma('journal_mode = WAL')
-    this.db.pragma('synchronous = NORMAL')
     for (const sql of CREATE_STMTS) {
-      this.db.prepare(sql).run()
+      this.db.run(sql)
+    }
+    // Auto-save to disk every 5s if dirty
+    this._saveTimer = setInterval(() => this._flush(), 5000)
+    this._saveTimer.unref()
+  }
+
+  private _markDirty(): void {
+    this._dirty = true
+  }
+
+  private _flush(): void {
+    if (!this._dirty) return
+    try {
+      const data = this.db.export()
+      const buf = Buffer.from(data)
+      const tmpFile = this.dbPath + '.tmp'
+      fs.writeFileSync(tmpFile, buf)
+      fs.renameSync(tmpFile, this.dbPath)
+      this._dirty = false
+    } catch (e) {
+      console.error('[message-store] flush to disk failed:', e)
     }
   }
 
   saveMessage(msg: StoredMessage): void {
-    this.db.prepare(`
+    sqlRun(this.db, `
       INSERT OR REPLACE INTO messages
         (id, thread_id, from_agent, to_agent, from_human, content, type,
          reply_to, attachments, status, ts, encrypted)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
+    `, [
       msg.id,
       msg.threadId ?? null,
       msg.fromAgent,
@@ -135,43 +179,44 @@ class SqliteMessageStore {
       msg.status ?? 'sent',
       msg.ts,
       msg.encrypted ? 1 : 0,
-    )
+    ])
     // Keep FTS in sync
-    this.db.prepare(`DELETE FROM messages_fts WHERE message_id = ?`).run(msg.id)
-    this.db.prepare(`
+    sqlRun(this.db, `DELETE FROM messages_fts WHERE message_id = ?`, [msg.id])
+    sqlRun(this.db, `
       INSERT INTO messages_fts (message_id, content, from_agent, to_agent)
       VALUES (?, ?, ?, ?)
-    `).run(msg.id, msg.content, msg.fromAgent, msg.toAgent)
+    `, [msg.id, msg.content, msg.fromAgent, msg.toAgent])
 
     if (msg.threadId) {
-      this.db.prepare(`
+      sqlRun(this.db, `
         INSERT INTO threads (id, participants, last_message_at, message_count)
         VALUES (?, '[]', ?, 1)
         ON CONFLICT(id) DO UPDATE SET
           last_message_at = excluded.last_message_at,
           message_count   = message_count + 1
-      `).run(msg.threadId, msg.ts)
+      `, [msg.threadId, msg.ts])
     }
+    this._markDirty()
   }
 
   getMessage(id: string): StoredMessage | null {
-    const row = this.db.prepare(`SELECT * FROM messages WHERE id = ?`).get(id) as
-      Record<string, unknown> | undefined
+    const row = sqlGet(this.db, `SELECT * FROM messages WHERE id = ?`, [id])
     return row ? row2msg(row) : null
   }
 
   getThread(threadId: string, limit = 50, offset = 0): StoredMessage[] {
-    return (this.db.prepare(
+    return sqlAll(this.db,
       `SELECT * FROM messages WHERE thread_id = ? ORDER BY ts ASC LIMIT ? OFFSET ?`,
-    ).all(threadId, limit, offset) as Record<string, unknown>[]).map(row2msg)
+      [threadId, limit, offset],
+    ).map(row2msg)
   }
 
   getMessagesByParticipant(agentHandle: string, limit = 50, offset = 0): StoredMessage[] {
-    return (this.db.prepare(`
+    return sqlAll(this.db, `
       SELECT * FROM messages
       WHERE from_agent = ? OR to_agent = ?
       ORDER BY ts DESC LIMIT ? OFFSET ?
-    `).all(agentHandle, agentHandle, limit, offset) as Record<string, unknown>[]).map(row2msg)
+    `, [agentHandle, agentHandle, limit, offset]).map(row2msg)
   }
 
   searchMessages(query: string, opts: SearchOptions = {}): StoredMessage[] {
@@ -194,33 +239,48 @@ class SqliteMessageStore {
     params.push(limit, offset)
 
     try {
-      return (this.db.prepare(sql).all(...params) as Record<string, unknown>[]).map(row2msg)
+      return sqlAll(this.db, sql, params).map(row2msg)
     } catch {
-      // Malformed FTS query — fall back to LIKE
-      const likeSql = sql.replace(
-        `m.id IN (\n        SELECT message_id FROM messages_fts WHERE messages_fts MATCH ?\n      )`,
-        `m.content LIKE ?`,
-      )
-      params[0] = `%${query}%`
-      return (this.db.prepare(likeSql).all(...params) as Record<string, unknown>[]).map(row2msg)
+      // FTS query failed — fall back to LIKE
+      const likeSql = `
+        SELECT * FROM messages
+        WHERE content LIKE ?
+        ${from ? ' AND from_agent = ?' : ''}
+        ${to ? ' AND to_agent = ?' : ''}
+        ${after ? ' AND ts > ?' : ''}
+        ${before ? ' AND ts < ?' : ''}
+        ORDER BY ts DESC LIMIT ? OFFSET ?
+      `
+      const likeParams: unknown[] = [`%${query}%`]
+      if (from) likeParams.push(from)
+      if (to) likeParams.push(to)
+      if (after) likeParams.push(after)
+      if (before) likeParams.push(before)
+      likeParams.push(limit, offset)
+      return sqlAll(this.db, likeSql, likeParams).map(row2msg)
     }
   }
 
   getInbox(agentHandle: string, limit = 20, offset = 0): StoredMessage[] {
-    return (this.db.prepare(
+    return sqlAll(this.db,
       `SELECT * FROM messages WHERE to_agent = ? ORDER BY ts DESC LIMIT ? OFFSET ?`,
-    ).all(agentHandle, limit, offset) as Record<string, unknown>[]).map(row2msg)
+      [agentHandle, limit, offset],
+    ).map(row2msg)
   }
 
   deleteMessage(id: string): void {
-    this.db.prepare(`DELETE FROM messages_fts WHERE message_id = ?`).run(id)
-    this.db.prepare(`DELETE FROM messages WHERE id = ?`).run(id)
+    sqlRun(this.db, `DELETE FROM messages_fts WHERE message_id = ?`, [id])
+    sqlRun(this.db, `DELETE FROM messages WHERE id = ?`, [id])
+    this._markDirty()
   }
 
   getStats(): { totalMessages: number; totalThreads: number } {
-    const msgs    = (this.db.prepare(`SELECT COUNT(*) as n FROM messages`).get() as { n: number }).n
-    const threads = (this.db.prepare(`SELECT COUNT(*) as n FROM threads`).get() as { n: number }).n
-    return { totalMessages: msgs, totalThreads: threads }
+    const msgsRow    = sqlGet(this.db, `SELECT COUNT(*) as n FROM messages`)
+    const threadsRow = sqlGet(this.db, `SELECT COUNT(*) as n FROM threads`)
+    return {
+      totalMessages: (msgsRow?.n as number) ?? 0,
+      totalThreads:  (threadsRow?.n as number) ?? 0,
+    }
   }
 }
 
@@ -317,17 +377,38 @@ type Backend = SqliteMessageStore | JsonlMessageStore
 export class MessageStore {
   private backend: Backend
 
-  constructor(dbPath = DB_PATH) {
+  private constructor(backend: Backend) {
+    this.backend = backend
+  }
+
+  /** Create a MessageStore. Tries sql.js first, falls back to JSONL. */
+  static async create(dbPath = DB_PATH): Promise<MessageStore> {
     try {
-      this.backend = new SqliteMessageStore(dbPath)
-      console.log(`[message-store] SQLite backend: ${dbPath}`)
+      const SQL = await initSqlJs()
+      let dbInstance: InstanceType<typeof SQL.Database>
+      // Load existing DB from disk if present
+      if (fs.existsSync(dbPath)) {
+        const fileData = fs.readFileSync(dbPath)
+        dbInstance = new SQL.Database(fileData)
+      } else {
+        dbInstance = new SQL.Database()
+      }
+      const backend = new SqliteMessageStore(dbPath, dbInstance)
+      console.log(`[message-store] sql.js backend: ${dbPath}`)
+      return new MessageStore(backend)
     } catch (err) {
       console.warn(
-        `[message-store] SQLite unavailable (${(err as Error).message}), ` +
+        `[message-store] sql.js unavailable (${(err as Error).message}), ` +
         `using JSONL fallback: ${FALLBACK_JSONL}`,
       )
-      this.backend = new JsonlMessageStore(FALLBACK_JSONL)
+      return new MessageStore(new JsonlMessageStore(FALLBACK_JSONL))
     }
+  }
+
+  /** Synchronous fallback constructor for backward compat. Uses JSONL. */
+  static createSync(dbPath = DB_PATH): MessageStore {
+    console.log(`[message-store] sync init → JSONL fallback: ${FALLBACK_JSONL}`)
+    return new MessageStore(new JsonlMessageStore(FALLBACK_JSONL))
   }
 
   saveMessage(msg: StoredMessage): void                            { this.backend.saveMessage(msg) }
@@ -344,5 +425,12 @@ export class MessageStore {
   }
 }
 
-/** Singleton shared across chat + social routes */
-export const messageStore = new MessageStore()
+/** Singleton — starts with JSONL, upgrades to sql.js when ready */
+export let messageStore = MessageStore.createSync()
+
+// Kick off async upgrade to sql.js
+MessageStore.create().then(upgraded => {
+  messageStore = upgraded
+}).catch(() => {
+  // Stay on JSONL
+})

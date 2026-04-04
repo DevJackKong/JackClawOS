@@ -22,6 +22,61 @@ import { pushService } from './push-service'
 import { presenceManager } from './presence'
 import { directoryStore } from './store/directory'
 import { offlineQueue } from './store/offline-queue'
+import type { MessageStatus, StatusTransition } from '@jackclaw/protocol'
+
+// ─── Deduplication ────────────────────────────────────────────────────────────
+
+const DEDUP_WINDOW_MS = 60_000  // 60s sliding window
+const seenMessages = new Map<string, number>()  // messageId → timestamp
+
+function isDuplicate(messageId: string): boolean {
+  const now = Date.now()
+  // Prune expired entries every 100 checks
+  if (seenMessages.size > 0 && seenMessages.size % 100 === 0) {
+    for (const [id, ts] of seenMessages) {
+      if (now - ts > DEDUP_WINDOW_MS) seenMessages.delete(id)
+    }
+  }
+  if (seenMessages.has(messageId)) return true
+  seenMessages.set(messageId, now)
+  return false
+}
+
+// ─── ACK tracking ─────────────────────────────────────────────────────────────
+
+const ACK_TIMEOUT_MS = 3000   // 3s wait for delivery_ack
+const RETRY_DELAY_MS = 500    // 500ms before retry
+const MAX_RETRIES    = 1      // retry once
+
+interface PendingAck {
+  target: string
+  msg: ChatMessage
+  retries: number
+  timer: NodeJS.Timeout
+}
+
+// messageId → pending ack info
+const pendingAcks = new Map<string, PendingAck>()
+
+// ─── Message trace store (in-memory, keyed by messageId) ──────────────────────
+
+const messageTraces = new Map<string, StatusTransition[]>()
+
+export function getMessageTrace(messageId: string): StatusTransition[] {
+  return messageTraces.get(messageId) ?? []
+}
+
+export function getMessageStatus(messageId: string): MessageStatus | null {
+  const trace = messageTraces.get(messageId)
+  if (!trace || trace.length === 0) return null
+  return trace[trace.length - 1].to
+}
+
+function recordTransition(messageId: string, from: MessageStatus, to: MessageStatus, nodeId: string): void {
+  const transitions = messageTraces.get(messageId) ?? []
+  transitions.push({ from, to, nodeId, ts: Date.now() })
+  messageTraces.set(messageId, transitions)
+}
 
 // ─── Priority ─────────────────────────────────────────────────────────────────
 
@@ -60,6 +115,16 @@ export class ChatWorker {
   private seq = 0
   private draining = false
 
+  // ─── Delivery ACK tracking ──────────────────────────────────────────────────
+  private _ackTimers = new Map<string, NodeJS.Timeout>()
+  private readonly ACK_TIMEOUT = 3000   // 3s to receive delivery_ack
+  private readonly RETRY_DELAY = 500    // 500ms before retry
+
+  // ─── Message deduplication ──────────────────────────────────────────────────
+  private _recentIds = new Map<string, number>()
+  private readonly DEDUPE_TTL = 60_000  // 60s sliding window
+  private _dedupeTimer: NodeJS.Timeout | null = null
+
   // Disk overflow
   private overflowFile: string
   private overflowActive = false
@@ -80,6 +145,10 @@ export class ChatWorker {
     this._startHeartbeat()
   }
 
+  private _startDedupeCleanup(): void {
+    // no-op: dedup cleanup handled by module-level seenMessages map
+  }
+
   // ─── Public API ─────────────────────────────────────────────────────────────
 
   /**
@@ -87,11 +156,24 @@ export class ChatWorker {
    * Saves to store immediately; delivery happens asynchronously.
    */
   handleIncoming(msg: ChatMessage): void {
+    // ─── Deduplication ─────────────────────────────────────────────────────────
+    if (isDuplicate(msg.id)) {
+      this.pushEvent(msg.from, 'receipt', {
+        messageId: msg.id, status: 'duplicate' as MessageStatus, nodeId: 'hub', ts: Date.now()
+      })
+      return
+    }
+
     this.totalReceived++
     this.store.saveMessage(msg)
 
+    // Record trace: → accepted
+    recordTransition(msg.id, 'accepted' as MessageStatus, 'accepted' as MessageStatus, 'hub')
+
     // Notify sender: hub received and stored the message
-    this.pushEvent(msg.from, 'receipt', { messageId: msg.id, status: 'sent', nodeId: msg.from, ts: Date.now() })
+    this.pushEvent(msg.from, 'receipt', {
+      messageId: msg.id, status: 'accepted' as MessageStatus, nodeId: 'hub', ts: Date.now()
+    })
 
     const toId = Array.isArray(msg.to) ? msg.to[0] : msg.to
     const group = this.store.getGroup(toId)
@@ -122,22 +204,100 @@ export class ChatWorker {
 
     const ws = this.wsClients.get(target)
     if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ event: 'message', data: msg }))
-      this.totalDelivered++
-      // Notify sender of delivery
-      this.pushEvent(msg.from, 'receipt', { messageId: msg.id, status: 'delivered', nodeId: target, ts: Date.now() })
+      const payload = JSON.stringify({ event: 'message', data: msg })
+      ws.send(payload, (err) => {
+        if (err) {
+          // ws.send failed — retry once after 500ms
+          console.warn(`[chat-worker] ws.send failed for ${target}: ${err.message}`)
+          recordTransition(msg.id, 'accepted' as MessageStatus, 'failed' as MessageStatus, target)
+          setTimeout(() => this._retryDeliver(target, msg, 0), RETRY_DELAY_MS)
+        } else {
+          // Sent successfully — record transition and start ACK timer
+          this.totalDelivered++
+          recordTransition(msg.id, 'accepted' as MessageStatus, 'sent' as MessageStatus, target)
+          this.pushEvent(msg.from, 'receipt', {
+            messageId: msg.id, status: 'sent' as MessageStatus, nodeId: target, ts: Date.now()
+          })
+          this._startAckTimer(msg.id, target, msg)
+        }
+      })
     } else {
-      this.store.queueForOffline(target, msg)
-      this.totalQueued++
-      // Notify via Web Push if node has a browser subscription
-      setImmediate(() => {
-        void pushService.push(target, {
-          title: `New message from ${msg.from}`,
-          body: (typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content)).slice(0, 120),
-          data: { type: 'chat', messageId: msg.id, from: msg.from },
-        })
+      this._queueOffline(target, msg)
+    }
+  }
+
+  /** Retry delivery once, then queue offline */
+  private _retryDeliver(target: string, msg: ChatMessage, attempt: number): void {
+    if (attempt >= MAX_RETRIES) {
+      this._queueOffline(target, msg)
+      return
+    }
+    const ws = this.wsClients.get(target)
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ event: 'message', data: msg }), (err) => {
+        if (err) {
+          this._queueOffline(target, msg)
+        } else {
+          this.totalDelivered++
+          recordTransition(msg.id, 'failed' as MessageStatus, 'sent' as MessageStatus, target)
+          this.pushEvent(msg.from, 'receipt', {
+            messageId: msg.id, status: 'sent' as MessageStatus, nodeId: target, ts: Date.now()
+          })
+          this._startAckTimer(msg.id, target, msg)
+        }
+      })
+    } else {
+      this._queueOffline(target, msg)
+    }
+  }
+
+  /** Start ACK timeout — if no delivery_ack within 3s, queue offline */
+  private _startAckTimer(messageId: string, target: string, msg: ChatMessage): void {
+    // Clear any existing timer
+    const existing = pendingAcks.get(messageId)
+    if (existing) clearTimeout(existing.timer)
+
+    const timer = setTimeout(() => {
+      // ACK timeout — queue offline
+      pendingAcks.delete(messageId)
+      recordTransition(messageId, 'sent' as MessageStatus, 'failed' as MessageStatus, target)
+      this._queueOffline(target, msg)
+    }, ACK_TIMEOUT_MS)
+    timer.unref()
+
+    pendingAcks.set(messageId, { target, msg, retries: 0, timer })
+  }
+
+  /** Called when we receive a delivery_ack from a node */
+  handleDeliveryAck(messageId: string, nodeId: string): void {
+    const pending = pendingAcks.get(messageId)
+    if (pending) {
+      clearTimeout(pending.timer)
+      pendingAcks.delete(messageId)
+    }
+    recordTransition(messageId, 'sent' as MessageStatus, 'acked' as MessageStatus, nodeId)
+    // Find the original sender to notify
+    const trace = messageTraces.get(messageId)
+    if (trace && trace.length > 0) {
+      this.pushEvent(trace[0].nodeId, 'receipt', {
+        messageId, status: 'acked' as MessageStatus, nodeId, ts: Date.now()
       })
     }
+  }
+
+  /** Queue message offline with push notification */
+  private _queueOffline(target: string, msg: ChatMessage): void {
+    this.store.queueForOffline(target, msg)
+    this.totalQueued++
+    recordTransition(msg.id, 'sent' as MessageStatus, 'failed' as MessageStatus, target)
+    // Notify via Web Push
+    setImmediate(() => {
+      void pushService.push(target, {
+        title: `New message from ${msg.from}`,
+        body: (typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content)).slice(0, 120),
+        data: { type: 'chat', messageId: msg.id, from: msg.from },
+      })
+    })
   }
 
   /**
@@ -245,7 +405,28 @@ export class ChatWorker {
 
       ws.on('message', (raw) => {
         try {
-          const msg = JSON.parse(raw.toString()) as ChatMessage
+          const parsed = JSON.parse(raw.toString())
+
+          // ─── Handle delivery_ack from Node ─────────────────────────────────
+          if (parsed.event === 'delivery_ack' && parsed.messageId) {
+            this.handleDeliveryAck(parsed.messageId, nodeId!)
+            return
+          }
+
+          // ─── Handle stored confirmation from Node ──────────────────────────
+          if (parsed.event === 'stored' && parsed.messageId) {
+            recordTransition(parsed.messageId, 'acked' as MessageStatus, 'stored' as MessageStatus, nodeId!)
+            return
+          }
+
+          // ─── Handle consumed confirmation from Node ────────────────────────
+          if (parsed.event === 'consumed' && parsed.messageId) {
+            recordTransition(parsed.messageId, 'stored' as MessageStatus, 'consumed' as MessageStatus, nodeId!)
+            return
+          }
+
+          // ─── Regular chat message ──────────────────────────────────────────
+          const msg = parsed as ChatMessage
 
           // Enqueue for priority delivery — never block the WS event loop
           this.handleIncoming(msg)

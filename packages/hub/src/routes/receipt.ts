@@ -31,7 +31,7 @@ function getOrCreate(messageId: string): ReceiptState {
     const msg = chatWorker.store.getMessage(messageId)
     state = {
       from: msg?.from ?? '',
-      status: 'sent',
+      status: 'accepted',
       deliveredTo: new Set(),
       readBy: new Set(),
     }
@@ -50,11 +50,11 @@ router.post('/delivered', (req: Request, res: Response) => {
 
   const state = getOrCreate(messageId)
   state.deliveredTo.add(nodeId)
-  if (state.status === 'sent' || state.status === 'sending') {
-    state.status = 'delivered'
+  if (state.status === 'accepted' || state.status === 'sent') {
+    state.status = 'acked'
   }
 
-  const receipt: DeliveryReceipt = { messageId, status: 'delivered', nodeId, ts: Date.now() }
+  const receipt: DeliveryReceipt = { messageId, status: 'acked', nodeId, ts: Date.now() }
   if (state.from) {
     pushToNodeWs(state.from, 'receipt', receipt)
   }
@@ -72,11 +72,11 @@ router.post('/read', (req: Request, res: Response) => {
 
   const state = getOrCreate(messageId)
   state.readBy.add(readBy)
-  state.status = 'read'
+  state.status = 'consumed'
 
   const receipt: ReadReceipt = { messageId, readBy, ts: Date.now() }
   if (state.from) {
-    pushToNodeWs(state.from, 'receipt', { ...receipt, status: 'read' as MessageStatus })
+    pushToNodeWs(state.from, 'receipt', { ...receipt, status: 'consumed' as MessageStatus })
   }
 
   res.json({ status: 'ok', receipt })
@@ -96,11 +96,11 @@ router.post('/read-batch', (req: Request, res: Response) => {
   for (const messageId of messageIds) {
     const state = getOrCreate(messageId)
     state.readBy.add(readBy)
-    state.status = 'read'
+    state.status = 'consumed'
     const receipt: ReadReceipt = { messageId, readBy, ts }
     receipts.push(receipt)
     if (state.from) {
-      pushToNodeWs(state.from, 'receipt', { ...receipt, status: 'read' as MessageStatus })
+      pushToNodeWs(state.from, 'receipt', { ...receipt, status: 'consumed' as MessageStatus })
     }
   }
 
@@ -135,7 +135,7 @@ router.get('/status/:messageId', (req: Request, res: Response) => {
       res.status(404).json({ error: 'Message not found' })
       return
     }
-    res.json({ messageId, status: 'sent' as MessageStatus, deliveredTo: [], readBy: [] })
+    res.json({ messageId, status: 'accepted' as MessageStatus, deliveredTo: [], readBy: [] })
     return
   }
 

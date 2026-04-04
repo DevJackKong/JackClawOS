@@ -32,6 +32,7 @@ import filesRoute from './routes/files'
 import groupsRoute from './routes/groups'
 import federationRoute from './routes/federation'
 import receiptRoute from './routes/receipt'
+import traceRoute from './routes/trace'
 import profilePageRoute from './routes/profile-page'
 import moltbookRoute from './routes/moltbook'
 import tasksRoute from './routes/tasks'
@@ -206,6 +207,7 @@ export function createServer(): Application {
 
   // Public: receipt delivery/read status (nodes authenticate via nodeId in body)
   app.use('/api/receipt', receiptRoute)
+  app.use('/api/chat', traceRoute)       // message trace & status
 
   // Public: inter-hub federation protocol (hub-to-hub, no JWT)
   app.use('/api/federation', federationRoute)

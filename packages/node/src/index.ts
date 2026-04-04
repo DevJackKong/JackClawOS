@@ -24,6 +24,7 @@ import { MemoryManager, MemDirSync } from '@jackclaw/memory'
 import { createNodeGateway } from './llm-gateway'
 import { SocialHandler } from './social-handler'
 import { AiSecretary } from './ai-secretary'
+import { createConcierge } from './ai-concierge'
 
 async function main() {
   console.log('🦞 JackClaw Node starting...')
@@ -61,7 +62,14 @@ async function main() {
     humanId: (config as any).humanId,
   })
 
-  // 1d. AI Secretary — initialized after aiClient; messages arrive async so this is safe
+  // 1d. Init AI Concierge
+  const concierge = createConcierge({
+    nodeId: identity.nodeId,
+    hubUrl: config.hubUrl,
+    agentHandle: (config as any).agentHandle,
+  })
+
+  // 1e. AI Secretary — initialized after aiClient; messages arrive async so this is safe
   let secretary: AiSecretary | null = null
 
   chatClient.onMessage((msg) => {

@@ -1,4 +1,5 @@
 // App.tsx — Tab navigation integrating NodeList, ChatPanel, TokenStats, ReportsList, PlanViewer
+// Auth: wraps with AuthProvider; shows AuthPage when logged out
 
 import React, { useEffect, useState } from 'react';
 import { api } from './api.js';
@@ -8,8 +9,11 @@ import { TokenStats } from './components/TokenStats.js';
 import { ReportsList } from './components/ReportsList.js';
 import { PlanViewer } from './components/PlanViewer.js';
 import { ContactsPage } from './components/ContactsPage.js';
+import { AuthProvider, useAuth } from './components/AuthContext.js';
+import { AuthPage } from './components/AuthPage.js';
+import { ProfilePage } from './components/ProfilePage.js';
 
-type Tab = 'nodes' | 'chat' | 'reports' | 'plan' | 'stats' | 'contacts';
+type Tab = 'nodes' | 'chat' | 'reports' | 'plan' | 'stats' | 'contacts' | 'profile';
 type HubStatus = 'checking' | 'ok' | 'error';
 
 const LS_URL   = 'jackclaw_hub_url';
@@ -19,19 +23,26 @@ function getStored(key: string): string {
   return localStorage.getItem(key) ?? '';
 }
 
-const TABS: { id: Tab; label: string; icon: string }[] = [
-  { id: 'nodes',    label: '节点', icon: '⬡' },
-  { id: 'chat',     label: '对话', icon: '◈' },
-  { id: 'reports',  label: '汇报', icon: '◉' },
-  { id: 'plan',     label: '计划', icon: '◐' },
-  { id: 'stats',    label: '统计', icon: '◑' },
+const MAIN_TABS: { id: Tab; label: string; icon: string }[] = [
+  { id: 'nodes',    label: '节点',  icon: '⬡' },
+  { id: 'chat',     label: '对话',  icon: '◈' },
+  { id: 'reports',  label: '汇报',  icon: '◉' },
+  { id: 'plan',     label: '计划',  icon: '◐' },
+  { id: 'stats',    label: '统计',  icon: '◑' },
   { id: 'contacts', label: '联系人', icon: '◫' },
 ];
 
-const App: React.FC = () => {
+// ── Dashboard (shown when logged in) ─────────────────────────────────────────
+
+const Dashboard: React.FC = () => {
+  const { user, token: userToken } = useAuth();
+
   const [tab, setTab]   = useState<Tab>('nodes');
   const [url, setUrl]   = useState(() => getStored(LS_URL));
-  const [token, setTok] = useState(() => getStored(LS_TOKEN));
+  const [storedToken, setStoredToken] = useState(() => getStored(LS_TOKEN));
+  // Use user JWT when available, fall back to manually configured token
+  const hubToken = userToken ?? storedToken;
+
   const [tempUrl, setTempUrl]   = useState(() => getStored(LS_URL));
   const [tempTok, setTempTok]   = useState(() => getStored(LS_TOKEN));
   const [configOpen, setConfigOpen] = useState(!getStored(LS_URL));
@@ -60,7 +71,7 @@ const App: React.FC = () => {
     localStorage.setItem(LS_URL, u);
     localStorage.setItem(LS_TOKEN, t);
     setUrl(u);
-    setTok(t);
+    setStoredToken(t);
     setConfigOpen(false);
   }
 
@@ -75,7 +86,7 @@ const App: React.FC = () => {
         </div>
 
         <nav className="tab-nav">
-          {TABS.map(t => (
+          {MAIN_TABS.map(t => (
             <button
               key={t.id}
               className={`tab-btn ${tab === t.id ? 'tab-active' : ''}`}
@@ -94,6 +105,21 @@ const App: React.FC = () => {
               {hubStatus === 'ok' ? 'HUB' : hubStatus === 'checking' ? '…' : '断开'}
             </span>
           </div>
+
+          {/* User profile button */}
+          {user && (
+            <button
+              className={`tab-btn ${tab === 'profile' ? 'tab-active' : ''}`}
+              style={{ padding: '4px 10px', maxWidth: 120, overflow: 'hidden' }}
+              onClick={() => setTab('profile')}
+              title={`@${user.handle} — 个人资料`}
+            >
+              <span className="tab-icon">◎</span>
+              <span className="tab-label" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {user.displayName}
+              </span>
+            </button>
+          )}
 
           <button
             className={`config-toggle ${configOpen ? 'config-open' : ''}`}
@@ -119,7 +145,7 @@ const App: React.FC = () => {
             <input
               className="config-input config-token"
               type="password"
-              placeholder="JWT Token"
+              placeholder="JWT Token（已登录时自动使用用户 token）"
               value={tempTok}
               onChange={e => setTempTok(e.target.value)}
             />
@@ -151,7 +177,9 @@ const App: React.FC = () => {
 
       {/* ── Main content ── */}
       <main className="app-main">
-        {!url ? (
+        {tab === 'profile' ? (
+          <ProfilePage />
+        ) : !url ? (
           <div className="no-config">
             <div className="no-config-icon" style={{ color: '#f97316' }}>⬡</div>
             <div className="no-config-text">请先配置 Hub URL 和 Token</div>
@@ -162,14 +190,14 @@ const App: React.FC = () => {
           </div>
         ) : (
           <>
-            {tab === 'nodes'   && <NodeList token={token} />}
-            {tab === 'chat'    && <ChatPanel token={token} nodeId={selectedNode} />}
-            {tab === 'reports' && <ReportsList token={token} />}
-            {tab === 'plan'     && <PlanViewer token={token} />}
-            {tab === 'stats'    && <TokenStats token={token} />}
+            {tab === 'nodes'    && <NodeList token={hubToken} />}
+            {tab === 'chat'     && <ChatPanel token={hubToken} nodeId={selectedNode} />}
+            {tab === 'reports'  && <ReportsList token={hubToken} />}
+            {tab === 'plan'     && <PlanViewer token={hubToken} />}
+            {tab === 'stats'    && <TokenStats token={hubToken} />}
             {tab === 'contacts' && (
               <ContactsPage
-                token={token}
+                token={hubToken}
                 onStartChat={nodeId => { setSelectedNode(nodeId); setTab('chat'); }}
               />
             )}
@@ -179,5 +207,31 @@ const App: React.FC = () => {
     </div>
   );
 };
+
+// ── Auth gate ─────────────────────────────────────────────────────────────────
+
+const AppInner: React.FC = () => {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div style={{
+        minHeight: '100vh', background: '#0d1117',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        color: '#f97316', fontSize: 32,
+      }}>
+        ⬡
+      </div>
+    );
+  }
+
+  return user ? <Dashboard /> : <AuthPage />;
+};
+
+const App: React.FC = () => (
+  <AuthProvider>
+    <AppInner />
+  </AuthProvider>
+);
 
 export default App;

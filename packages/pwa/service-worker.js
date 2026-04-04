@@ -1,258 +1,372 @@
-// JackClaw PWA Service Worker
-// 功能：离线缓存 + Web Push 推送通知
-// 版本管理：更新 CACHE_VERSION 触发重新安装
+// JackClaw PWA Service Worker v3
+// Workbox-style strategies (pure JS), offline message queue, background sync
 
-const CACHE_VERSION = 'v2'
+const CACHE_VERSION = 'v3'
 const STATIC_CACHE  = `jackclaw-static-${CACHE_VERSION}`
 const API_CACHE     = `jackclaw-api-${CACHE_VERSION}`
 const PUSH_CACHE    = `jackclaw-push-${CACHE_VERSION}`
 
-// ── 静态资源缓存列表（App Shell）─────────────────────────────────────────────
+const DB_NAME    = 'jackclaw-offline'
+const DB_VERSION = 1
+const MSG_STORE  = 'outbox'   // offline message queue
+const SYNC_TAG   = 'jackclaw-msg-sync'
+
+// ── App Shell（Cache-first 静态资源）──────────────────────────────────────────
 const STATIC_ASSETS = [
   '/',
   '/index.html',
+  '/offline.html',
   '/manifest.json',
   '/icons/icon-192.png',
   '/icons/icon-512.png',
-  '/offline.html',
 ]
 
-// ── API 路径前缀（按需缓存）──────────────────────────────────────────────────
-const API_CACHE_PATHS = [
-  '/api/nodes',
-  '/api/summary',
-]
+// ── API 路径前缀（Network-first）─────────────────────────────────────────────
+const API_PREFIXES = ['/api/']
 
-// ── Install: 预缓存 App Shell ─────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+// IndexedDB helpers（无第三方依赖）
+// ══════════════════════════════════════════════════════════════════════════════
+
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, DB_VERSION)
+    req.onupgradeneeded = (e) => {
+      const db = e.target.result
+      if (!db.objectStoreNames.contains(MSG_STORE)) {
+        const store = db.createObjectStore(MSG_STORE, { keyPath: 'id', autoIncrement: true })
+        store.createIndex('createdAt', 'createdAt')
+      }
+    }
+    req.onsuccess  = (e) => resolve(e.target.result)
+    req.onerror    = (e) => reject(e.target.error)
+  })
+}
+
+async function dbPut(storeName, data) {
+  const db = await openDB()
+  return new Promise((resolve, reject) => {
+    const tx   = db.transaction(storeName, 'readwrite')
+    const req  = tx.objectStore(storeName).add(data)
+    req.onsuccess = (e) => resolve(e.target.result)
+    req.onerror   = (e) => reject(e.target.error)
+  })
+}
+
+async function dbGetAll(storeName) {
+  const db = await openDB()
+  return new Promise((resolve, reject) => {
+    const tx   = db.transaction(storeName, 'readonly')
+    const req  = tx.objectStore(storeName).getAll()
+    req.onsuccess = (e) => resolve(e.target.result)
+    req.onerror   = (e) => reject(e.target.error)
+  })
+}
+
+async function dbDelete(storeName, id) {
+  const db = await openDB()
+  return new Promise((resolve, reject) => {
+    const tx   = db.transaction(storeName, 'readwrite')
+    const req  = tx.objectStore(storeName).delete(id)
+    req.onsuccess = () => resolve()
+    req.onerror   = (e) => reject(e.target.error)
+  })
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Install — 预缓存 App Shell
+// ══════════════════════════════════════════════════════════════════════════════
+
 self.addEventListener('install', (event) => {
   console.log('[SW] Installing', CACHE_VERSION)
   event.waitUntil(
     caches.open(STATIC_CACHE)
       .then(cache => cache.addAll(STATIC_ASSETS))
-      .then(() => self.skipWaiting())  // 立即激活新版本
+      .then(() => self.skipWaiting())
   )
 })
 
-// ── Activate: 清理旧版本缓存 ───────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+// Activate — 清理旧版本缓存
+// ══════════════════════════════════════════════════════════════════════════════
+
 self.addEventListener('activate', (event) => {
   console.log('[SW] Activating', CACHE_VERSION)
+  const keep = new Set([STATIC_CACHE, API_CACHE, PUSH_CACHE])
   event.waitUntil(
-    caches.keys().then(keys => Promise.all(
-      keys
-        .filter(k => k !== STATIC_CACHE && k !== API_CACHE && k !== PUSH_CACHE)
-        .map(k => {
+    caches.keys()
+      .then(keys => Promise.all(
+        keys.filter(k => !keep.has(k)).map(k => {
           console.log('[SW] Deleting old cache:', k)
           return caches.delete(k)
         })
-    )).then(() => self.clients.claim())  // 立即接管所有 clients
+      ))
+      .then(() => self.clients.claim())
   )
 })
 
-// ── Fetch: 缓存策略路由 ────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+// Fetch — 缓存策略路由
+// ══════════════════════════════════════════════════════════════════════════════
+
 self.addEventListener('fetch', (event) => {
   const { request } = event
   const url = new URL(request.url)
 
-  // 非 GET 请求（POST/PUT/DELETE）直接透传，不缓存
-  if (request.method !== 'GET') return
+  // 跨域请求直接透传
+  if (url.origin !== self.location.origin) return
 
-  // API 请求：Network First（联网优先，离线降级返回缓存）
-  if (isApiRequest(url)) {
-    event.respondWith(networkFirst(request, API_CACHE))
+  // 非 GET：拦截发消息的 POST 请求，其余透传
+  if (request.method !== 'GET') {
+    if (isChatMessageRequest(url)) {
+      event.respondWith(handleChatPost(request))
+    }
     return
   }
 
-  // 静态资源：Cache First（缓存优先）
-  event.respondWith(cacheFirst(request, STATIC_CACHE))
+  // API（Network-first）
+  if (API_PREFIXES.some(p => url.pathname.startsWith(p))) {
+    event.respondWith(networkFirst(request))
+    return
+  }
+
+  // 静态资源（Cache-first）
+  event.respondWith(cacheFirst(request))
 })
 
-// ── Cache First 策略 ──────────────────────────────────────────────────────────
-async function cacheFirst(request, cacheName) {
+// ── 判断是否为聊天消息 POST ───────────────────────────────────────────────────
+function isChatMessageRequest(url) {
+  return url.pathname.startsWith('/api/messages') ||
+         url.pathname.startsWith('/api/chat')
+}
+
+// ── Cache-First 策略 ──────────────────────────────────────────────────────────
+async function cacheFirst(request) {
   const cached = await caches.match(request)
   if (cached) return cached
 
   try {
     const response = await fetch(request)
     if (response.ok) {
-      const cache = await caches.open(cacheName)
+      const cache = await caches.open(STATIC_CACHE)
       cache.put(request, response.clone())
     }
     return response
   } catch {
-    // 离线且无缓存时，返回离线页面
-    return caches.match('/offline.html')
+    const offlinePage = await caches.match('/offline.html')
+    return offlinePage || new Response('Offline', { status: 503 })
   }
 }
 
-// ── Network First 策略 ────────────────────────────────────────────────────────
-async function networkFirst(request, cacheName) {
+// ── Network-First 策略 ────────────────────────────────────────────────────────
+async function networkFirst(request) {
   try {
     const response = await fetch(request)
     if (response.ok) {
-      const cache = await caches.open(cacheName)
-      // API 缓存设置最大数量（LRU 简化版）
+      const cache = await caches.open(API_CACHE)
       cache.put(request, response.clone())
     }
     return response
   } catch {
-    // 网络失败，降级到缓存
     const cached = await caches.match(request)
     if (cached) {
-      console.log('[SW] Offline, serving cached API response for:', request.url)
+      console.log('[SW] Offline fallback (cache):', request.url)
       return cached
     }
-    // 连缓存都没有，返回标准 JSON 错误
     return new Response(
-      JSON.stringify({ error: 'Offline', cached: false }),
+      JSON.stringify({ error: 'offline', cached: false }),
       { status: 503, headers: { 'Content-Type': 'application/json' } }
     )
   }
 }
 
-// ── 判断是否为 API 请求 ────────────────────────────────────────────────────────
-function isApiRequest(url) {
-  return API_CACHE_PATHS.some(path => url.pathname.startsWith(path))
+// ── 离线消息处理：先入 IndexedDB 队列，成功则立即透传 ────────────────────────
+async function handleChatPost(request) {
+  // 克隆 body（只能读一次）
+  const bodyText = await request.text()
+
+  try {
+    // 有网则直接发送
+    const response = await fetch(request.url, {
+      method:  request.method,
+      headers: request.headers,
+      body:    bodyText,
+    })
+    return response
+  } catch {
+    // 离线：存入 IndexedDB outbox
+    console.log('[SW] Offline — queuing message to IndexedDB')
+    await dbPut(MSG_STORE, {
+      url:       request.url,
+      method:    request.method,
+      headers:   [...request.headers.entries()].reduce((o, [k, v]) => { o[k] = v; return o }, {}),
+      body:      bodyText,
+      createdAt: Date.now(),
+    })
+
+    // 注册 Background Sync（若支持）
+    if ('sync' in self.registration) {
+      try {
+        await self.registration.sync.register(SYNC_TAG)
+        console.log('[SW] Background Sync registered:', SYNC_TAG)
+      } catch (err) {
+        console.warn('[SW] Sync.register failed:', err)
+      }
+    }
+
+    return new Response(
+      JSON.stringify({ queued: true, offline: true }),
+      { status: 202, headers: { 'Content-Type': 'application/json' } }
+    )
+  }
 }
 
-// ── Push 通知处理 ─────────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+// Background Sync — 上线后发送离线消息队列
+// ══════════════════════════════════════════════════════════════════════════════
+
+self.addEventListener('sync', (event) => {
+  console.log('[SW] Sync event:', event.tag)
+  if (event.tag === SYNC_TAG) {
+    event.waitUntil(flushOutbox())
+  }
+  if (event.tag === 'jackclaw-task-sync') {
+    event.waitUntil(syncPendingTasks())
+  }
+})
+
+async function flushOutbox() {
+  const messages = await dbGetAll(MSG_STORE)
+  if (messages.length === 0) return
+  console.log('[SW] Flushing', messages.length, 'queued messages')
+
+  for (const msg of messages) {
+    try {
+      const res = await fetch(msg.url, {
+        method:  msg.method,
+        headers: msg.headers,
+        body:    msg.body,
+      })
+      if (res.ok || res.status < 500) {
+        // 发送成功（或服务端业务错误，不重试），从队列删除
+        await dbDelete(MSG_STORE, msg.id)
+        console.log('[SW] Message sent, id:', msg.id)
+
+        // 通知所有 client 刷新会话
+        const clientList = await self.clients.matchAll({ type: 'window' })
+        clientList.forEach(c => c.postMessage({ type: 'MSG_SENT', msgId: msg.id }))
+      }
+      // 5xx 错误保留队列，等下次 sync
+    } catch (err) {
+      console.warn('[SW] Failed to flush message id:', msg.id, err)
+      // 网络异常：保留，Background Sync 会自动重试
+    }
+  }
+}
+
+async function syncPendingTasks() {
+  console.log('[SW] syncPendingTasks — placeholder, extend as needed')
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Push 通知
+// ══════════════════════════════════════════════════════════════════════════════
+
 self.addEventListener('push', (event) => {
   console.log('[SW] Push received')
-
   let data = {}
-  try {
-    data = event.data ? event.data.json() : {}
-  } catch {
+  try { data = event.data ? event.data.json() : {} } catch {
     data = { title: 'JackClaw', body: event.data?.text() ?? '新消息' }
   }
 
   const {
-    title   = 'JackClaw CEO',
-    body    = '有新的团队汇报',
-    url     = '/',
-    icon    = '/icons/icon-192.png',
-    badge   = '/icons/badge-72.png',
-    tag     = 'jackclaw-report',
+    title    = 'JackClaw',
+    body     = '有新消息',
+    url      = '/',
+    icon     = '/icons/icon-192.png',
+    badge    = '/icons/badge-72.png',
+    tag      = 'jackclaw-msg',
     priority = 'normal',
     reportId,
-    nodeId,
-    nodeName,
+    chatId,
   } = data
 
-  // 根据优先级选择通知配置
   const isUrgent = priority === 'urgent' || priority === 'high'
 
-  const notificationOptions = {
-    body,
-    icon,
-    badge,
-    tag,
-    // 重要汇报震动提醒
-    vibrate: isUrgent ? [200, 100, 200, 100, 400] : [100, 50, 100],
-    // 持久化（不自动消失）
-    requireInteraction: isUrgent,
-    // 通知数据（用于 notificationclick）
-    data: { url, reportId, nodeId, nodeName, priority },
-    // 操作按钮
-    actions: buildActions(data),
-    // 静默通知标志
-    silent: false,
-    // 时间戳
-    timestamp: Date.now(),
-  }
-
   event.waitUntil(
-    self.registration.showNotification(title, notificationOptions)
+    self.registration.showNotification(title, {
+      body,
+      icon,
+      badge,
+      tag,
+      vibrate:             isUrgent ? [200, 100, 200, 100, 400] : [100, 50, 100],
+      requireInteraction:  isUrgent,
+      silent:              false,
+      timestamp:           Date.now(),
+      data:                { url, reportId, chatId, priority },
+      actions:             buildActions(data),
+    })
   )
 })
 
-// ── 构建通知操作按钮 ──────────────────────────────────────────────────────────
 function buildActions(data) {
-  const actions = []
-
   if (data.hasApproval) {
-    actions.push(
+    return [
       { action: 'approve', title: '✅ 批准' },
-      { action: 'reject',  title: '❌ 驳回' }
-    )
-  } else {
-    actions.push(
-      { action: 'view',    title: '📋 查看详情' },
-      { action: 'dismiss', title: '稍后处理' }
-    )
+      { action: 'reject',  title: '❌ 驳回' },
+    ]
   }
-
-  return actions
+  return [
+    { action: 'view',    title: '查看' },
+    { action: 'dismiss', title: '稍后' },
+  ]
 }
 
-// ── 通知点击处理 ───────────────────────────────────────────────────────────────
 self.addEventListener('notificationclick', (event) => {
   const { action, notification } = event
-  const { url, reportId, nodeId, priority } = notification.data ?? {}
-
+  const { url, reportId } = notification.data ?? {}
   notification.close()
 
-  // 快捷操作：直接审批（无需打开 App）
   if (action === 'approve' && reportId) {
     event.waitUntil(quickApprove(reportId, 'approved'))
     return
   }
-
   if (action === 'reject' && reportId) {
     event.waitUntil(quickApprove(reportId, 'rejected'))
     return
   }
-
   if (action === 'dismiss') return
 
-  // 默认：打开或聚焦到对应页面
   const targetUrl = url || '/'
-
   event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true })
-      .then(windowClients => {
-        // 已有窗口则聚焦并导航
-        for (const client of windowClients) {
-          if ('focus' in client) {
-            client.focus()
-            client.navigate(targetUrl)
-            return
-          }
-        }
-        // 无窗口则新开
-        return clients.openWindow(targetUrl)
-      })
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(wins => {
+      for (const w of wins) {
+        if ('focus' in w) { w.focus(); w.navigate(targetUrl); return }
+      }
+      return clients.openWindow(targetUrl)
+    })
   )
 })
 
-// ── 快捷审批（不打开 App 直接处理）──────────────────────────────────────────
+self.addEventListener('notificationclose', (event) => {
+  console.log('[SW] Notification closed:', event.notification.tag)
+})
+
 async function quickApprove(reportId, status) {
   try {
-    // 从 cache 获取 Hub URL 和 token 配置
-    const configResponse = await caches.match('/__jackclaw__/config')
-    const config = configResponse ? await configResponse.json() : {}
-    const { hubUrl, token } = config
+    const cfg = await getCachedConfig()
+    if (!cfg.hubUrl || !cfg.token) { await clients.openWindow(`/approvals?id=${reportId}`); return }
 
-    if (!hubUrl || !token) {
-      console.warn('[SW] quickApprove: Hub config not found, opening app...')
-      await clients.openWindow(`/approvals?id=${reportId}`)
-      return
-    }
-
-    const res = await fetch(`${hubUrl}/api/approvals/${reportId}`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-      },
-      body: JSON.stringify({ status }),
+    const res = await fetch(`${cfg.hubUrl}/api/approvals/${reportId}`, {
+      method:  'PUT',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${cfg.token}` },
+      body:    JSON.stringify({ status }),
     })
-
     if (res.ok) {
-      // 显示确认通知
       await self.registration.showNotification('JackClaw', {
         body: status === 'approved' ? '✅ 已批准' : '❌ 已驳回',
         icon: '/icons/icon-192.png',
-        tag: 'jackclaw-quickaction',
+        tag:  'jackclaw-quickaction',
         silent: true,
       })
     }
@@ -262,26 +376,10 @@ async function quickApprove(reportId, status) {
   }
 }
 
-// ── 通知关闭事件 ───────────────────────────────────────────────────────────────
-self.addEventListener('notificationclose', (event) => {
-  // 可用于统计 dismiss 率
-  console.log('[SW] Notification closed:', event.notification.tag)
-})
+// ══════════════════════════════════════════════════════════════════════════════
+// Periodic Background Sync
+// ══════════════════════════════════════════════════════════════════════════════
 
-// ── Background Sync（任务委派失败重试）───────────────────────────────────────
-self.addEventListener('sync', (event) => {
-  if (event.tag === 'jackclaw-task-sync') {
-    event.waitUntil(syncPendingTasks())
-  }
-})
-
-async function syncPendingTasks() {
-  // 从 IndexedDB 读取待同步任务
-  // （完整实现需引入 idb 库，此处为结构占位）
-  console.log('[SW] Syncing pending tasks...')
-}
-
-// ── Periodic Background Sync（定期拉取汇报）──────────────────────────────────
 self.addEventListener('periodicsync', (event) => {
   if (event.tag === 'jackclaw-daily-summary') {
     event.waitUntil(prefetchDailySummary())
@@ -290,16 +388,12 @@ self.addEventListener('periodicsync', (event) => {
 
 async function prefetchDailySummary() {
   try {
-    const configResponse = await caches.match('/__jackclaw__/config')
-    const config = configResponse ? await configResponse.json() : {}
-    const { hubUrl, token } = config
+    const { hubUrl, token } = await getCachedConfig()
     if (!hubUrl || !token) return
-
     const today = new Date().toISOString().slice(0, 10)
-    const res = await fetch(`${hubUrl}/api/summary?date=${today}`, {
-      headers: { 'Authorization': `Bearer ${token}` }
+    const res   = await fetch(`${hubUrl}/api/summary?date=${today}`, {
+      headers: { 'Authorization': `Bearer ${token}` },
     })
-
     if (res.ok) {
       const cache = await caches.open(API_CACHE)
       cache.put(new Request(`${hubUrl}/api/summary?date=${today}`), res.clone())
@@ -310,18 +404,18 @@ async function prefetchDailySummary() {
   }
 }
 
-// ── 消息处理（主线程 ↔ SW 通信）─────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+// 主线程消息通信
+// ══════════════════════════════════════════════════════════════════════════════
+
 self.addEventListener('message', (event) => {
   const { type, payload } = event.data ?? {}
-
   switch (type) {
     case 'SAVE_CONFIG':
-      // 主线程发来 Hub URL + Token，缓存供离线使用
       caches.open(PUSH_CACHE).then(cache => {
-        const response = new Response(JSON.stringify(payload), {
-          headers: { 'Content-Type': 'application/json' }
-        })
-        cache.put('/__jackclaw__/config', response)
+        cache.put('/__jackclaw__/config', new Response(JSON.stringify(payload), {
+          headers: { 'Content-Type': 'application/json' },
+        }))
       })
       break
 
@@ -333,9 +427,28 @@ self.addEventListener('message', (event) => {
       event.source?.postMessage({ type: 'VERSION', version: CACHE_VERSION })
       break
 
+    case 'GET_OUTBOX_COUNT':
+      dbGetAll(MSG_STORE).then(msgs => {
+        event.source?.postMessage({ type: 'OUTBOX_COUNT', count: msgs.length })
+      })
+      break
+
+    case 'FLUSH_OUTBOX':
+      flushOutbox()
+      break
+
     default:
       console.log('[SW] Unknown message:', type)
   }
 })
+
+// ── 读取缓存的 Hub 配置 ───────────────────────────────────────────────────────
+async function getCachedConfig() {
+  try {
+    const res = await caches.match('/__jackclaw__/config')
+    if (res) return await res.json()
+  } catch {}
+  return {}
+}
 
 console.log('[SW] JackClaw Service Worker loaded', CACHE_VERSION)

@@ -1,7 +1,7 @@
 {
   "name": "JackClaw CEO",
   "short_name": "JackClaw",
-  "description": "JackClaw CEO 移动控制台 - 随时查看团队汇报、委派任务、审批决策",
+  "description": "JackClaw CEO 移动控制台 — 随时查看团队汇报、委派任务、审批决策",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
@@ -71,6 +71,20 @@
   ],
   "shortcuts": [
     {
+      "name": "打开聊天",
+      "short_name": "聊天",
+      "description": "查看和发送消息",
+      "url": "/chat",
+      "icons": [{ "src": "/icons/shortcut-chat.png", "sizes": "96x96" }]
+    },
+    {
+      "name": "打开联系人",
+      "short_name": "联系人",
+      "description": "查看团队成员和 Agent 节点",
+      "url": "/contacts",
+      "icons": [{ "src": "/icons/shortcut-contacts.png", "sizes": "96x96" }]
+    },
+    {
       "name": "今日汇报",
       "short_name": "汇报",
       "description": "查看今日团队汇报摘要",
@@ -83,13 +97,6 @@
       "description": "查看待审批决策",
       "url": "/approvals",
       "icons": [{ "src": "/icons/shortcut-approvals.png", "sizes": "96x96" }]
-    },
-    {
-      "name": "委派任务",
-      "short_name": "委派",
-      "description": "向 Agent 委派新任务",
-      "url": "/tasks/new",
-      "icons": [{ "src": "/icons/shortcut-tasks.png", "sizes": "96x96" }]
     }
   ],
   "share_target": {
@@ -98,7 +105,8 @@
     "enctype": "application/x-www-form-urlencoded",
     "params": {
       "title": "title",
-      "text": "description"
+      "text":  "description",
+      "url":   "url"
     }
   },
   "prefer_related_applications": false

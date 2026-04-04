@@ -119,6 +119,25 @@ export interface PlanEstimateResponse {
   note?: string;
 }
 
+// ── Auth types ───────────────────────────────────────────────────────────────
+
+export interface UserProfile {
+  handle: string;
+  displayName: string;
+  bio: string;
+  avatar: string;
+}
+
+export interface AuthResponse {
+  token: string;
+  user: UserProfile;
+}
+
+export interface HandleCheckResponse {
+  available: boolean;
+  reason?: string;
+}
+
 // ── Auth helper ──────────────────────────────────────────────────────────────
 
 function authHeaders(token: string): Record<string, string> {
@@ -181,4 +200,37 @@ export const api = {
       headers: authHeaders(token),
       body: JSON.stringify(body),
     }),
+
+  auth: {
+    checkHandle: (handle: string): Promise<HandleCheckResponse> =>
+      req(`${BASE}/api/auth/check-handle`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ handle }),
+      }),
+
+    register: (body: { displayName: string; handle: string; password: string }): Promise<AuthResponse> =>
+      req(`${BASE}/api/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }),
+
+    login: (body: { handle: string; password: string }): Promise<AuthResponse> =>
+      req(`${BASE}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }),
+
+    me: (token: string): Promise<UserProfile> =>
+      req(`${BASE}/api/auth/me`, { headers: authHeaders(token) }),
+
+    updateProfile: (token: string, body: Partial<Omit<UserProfile, 'handle'>>): Promise<UserProfile> =>
+      req(`${BASE}/api/auth/profile`, {
+        method: 'PATCH',
+        headers: authHeaders(token),
+        body: JSON.stringify(body),
+      }),
+  },
 };

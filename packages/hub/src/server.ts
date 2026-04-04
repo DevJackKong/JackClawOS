@@ -32,6 +32,7 @@ import filesRoute from './routes/files'
 import groupsRoute from './routes/groups'
 import federationRoute from './routes/federation'
 import receiptRoute from './routes/receipt'
+import profilePageRoute from './routes/profile-page'
 import { initFederationManager } from './federation'
 import { JWTPayload } from './types'
 
@@ -198,6 +199,9 @@ export function createServer(): Application {
 
   // Public: inter-hub federation protocol (hub-to-hub, no JWT)
   app.use('/api/federation', federationRoute)
+
+  // Public: user profile pages (HTML, no JWT)
+  app.use('/', profilePageRoute)
 
   // Protected: all other routes require JWT
   app.use('/api/', jwtAuthMiddleware)

@@ -3,6 +3,8 @@
  */
 
 import { randomUUID } from 'crypto'
+import { messageStore } from './message-store'
+import type { StoredMessage } from './message-store'
 
 export interface ChatGroup {
   groupId: string
@@ -58,6 +60,22 @@ export interface ChatThread {
   messageCount: number
 }
 
+function storedToChat(s: StoredMessage): ChatMessage {
+  return {
+    id:        s.id,
+    threadId:  s.threadId,
+    replyToId: s.replyTo,
+    from:      s.fromAgent,
+    to:        s.toAgent,
+    type:      s.type as ChatMessageType,
+    content:   s.content,
+    attachments: s.attachments as ChatMessage['attachments'],
+    ts:        s.ts,
+    signature: '',
+    encrypted: s.encrypted,
+  }
+}
+
 export class ChatStore {
   private messages: Map<string, ChatMessage> = new Map()
   private threads: Map<string, ChatThread> = new Map()
@@ -79,9 +97,31 @@ export class ChatStore {
         thread.messageCount++
       }
     }
+    // Persist to SQLite / JSONL
+    const stored: StoredMessage = {
+      id:          msg.id,
+      threadId:    msg.threadId,
+      fromAgent:   msg.from,
+      toAgent:     Array.isArray(msg.to) ? JSON.stringify(msg.to) : msg.to,
+      content:     msg.content,
+      type:        msg.type,
+      replyTo:     msg.replyToId,
+      attachments: msg.attachments,
+      status:      msg.executionResult?.status ?? 'sent',
+      ts:          msg.ts,
+      encrypted:   msg.encrypted,
+    }
+    try { messageStore.saveMessage(stored) } catch { /* persistence is best-effort */ }
   }
 
   getThread(threadId: string): ChatMessage[] {
+    // Try persistent store first; fall back to in-memory
+    try {
+      const stored = messageStore.getThread(threadId, 200, 0)
+      if (stored.length > 0) {
+        return stored.map(s => storedToChat(s))
+      }
+    } catch { /* fall through */ }
     return [...this.messages.values()]
       .filter(m => m.threadId === threadId)
       .sort((a, b) => a.ts - b.ts)

@@ -260,12 +260,20 @@
 </style>
 
   <!-- PWA: 主屏幕图标 (Apple) -->
+  <link rel="apple-touch-icon" sizes="180x180" href="/icons/icon-192.png">
   <link rel="apple-touch-icon" sizes="192x192" href="/icons/icon-192.png">
   <link rel="apple-touch-icon" sizes="512x512" href="/icons/icon-512.png">
-  <!-- PWA: Splash screen (Apple) -->
+  <!-- PWA: Apple 全屏 / 启动画面 -->
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="JackClaw">
+  <!-- Apple 启动图（iPhone / iPad 常见断点，图片可缺省，浏览器自动生成） -->
+  <link rel="apple-touch-startup-image"
+        media="screen and (device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3)"
+        href="/icons/splash-390x844.png">
+  <link rel="apple-touch-startup-image"
+        media="screen and (device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3)"
+        href="/icons/splash-430x932.png">
   <!-- PWA: Android / Chrome -->
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="theme-color" content="#6366f1">
@@ -273,6 +281,8 @@
   <link rel="manifest" href="/manifest.json">
   <!-- PWA: 防止 iOS 自动检测电话号码 -->
   <meta name="format-detection" content="telephone=no">
+  <!-- 推送管理器 -->
+  <script src="/push-manager.js"></script>
 </head>
 <body>
 
@@ -552,6 +562,13 @@ if ('serviceWorker' in navigator) {
           }
         })
       })
+
+      // 初始化推送管理器（VAPID key 由 localStorage 提供）
+      const vapidKey = localStorage.getItem('jackclaw_vapid_key') || ''
+      await JackClawPush.init(vapidKey)
+
+      // 查询 outbox 未发送数量，显示角标
+      reg.active?.postMessage({ type: 'GET_OUTBOX_COUNT' })
     } catch (err) {
       console.error('[PWA] SW registration failed:', err)
     }
@@ -559,10 +576,28 @@ if ('serviceWorker' in navigator) {
 
   // 接收 SW 消息
   navigator.serviceWorker.addEventListener('message', (e) => {
-    if (e.data?.type === 'VERSION') {
+    const { type } = e.data ?? {}
+    if (type === 'VERSION') {
       console.log('[PWA] SW version:', e.data.version)
     }
+    if (type === 'OUTBOX_COUNT') {
+      updateOutboxBadge(e.data.count)
+    }
+    if (type === 'MSG_SENT') {
+      console.log('[PWA] Queued message delivered, id:', e.data.msgId)
+      // 刷新 outbox 角标
+      navigator.serviceWorker.controller?.postMessage({ type: 'GET_OUTBOX_COUNT' })
+    }
   })
+}
+
+// ── 离线消息 outbox 角标 ─────────────────────────────────────────────────────
+function updateOutboxBadge(count) {
+  // 在状态栏显示待发消息数
+  const el = document.getElementById('status-text')
+  if (count > 0) {
+    el.textContent = `离线队列 ${count} 条待发`
+  }
 }
 
 // ── PWA: Install Prompt ───────────────────────────────────────────────────────
@@ -612,48 +647,13 @@ updateOnlineStatus()
 const VAPID_PUBLIC_KEY = localStorage.getItem('jackclaw_vapid_key') || ''
 
 async function subscribePush() {
-  if (!('PushManager' in window)) {
-    alert('当前浏览器不支持推送通知')
-    return
-  }
-  const permission = await Notification.requestPermission()
-  if (permission !== 'granted') {
-    console.warn('[PWA] Push permission denied')
-    return
-  }
-
-  try {
-    const reg = await navigator.serviceWorker.ready
-    let subscription = await reg.pushManager.getSubscription()
-
-    if (!subscription && VAPID_PUBLIC_KEY) {
-      subscription = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
-      })
-    }
-
-    if (subscription) {
-      const { url, token } = getConfig()
-      if (!url) return
-
-      await fetch(url + '/api/push/subscribe', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ' + token,
-        },
-        body: JSON.stringify({ subscription }),
-      })
-
-      // 同步给 SW
-      const sw = await navigator.serviceWorker.ready
-      sw.active?.postMessage({ type: 'SAVE_CONFIG', payload: { hubUrl: url, token } })
-      console.log('[PWA] Push subscribed!')
-    }
-  } catch (err) {
-    console.error('[PWA] Push subscribe error:', err)
-  }
+  const { url, token } = getConfig()
+  if (!url) return
+  // 使用 push-manager.js 的封装
+  const vapidKey = localStorage.getItem('jackclaw_vapid_key') || ''
+  await JackClawPush.init(vapidKey)
+  const sub = await JackClawPush.subscribe(url, token)
+  if (sub) console.log('[PWA] Push subscribed!')
 }
 
 function urlBase64ToUint8Array(base64String) {

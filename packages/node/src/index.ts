@@ -27,6 +27,7 @@ import { AiSecretary } from './ai-secretary'
 import { createConcierge } from './ai-concierge'
 import { MoltbookClient } from './integrations/moltbook'
 import { createMoltbookAgent } from './integrations/moltbook-agent'
+import { ChannelBridge } from './channels'
 
 async function main() {
   console.log('🦞 JackClaw Node starting...')
@@ -121,7 +122,15 @@ async function main() {
   })
   console.log(`[secretary] Initialized — mode: ${secretary.getMode()}`)
 
-  // 3b. Moltbook integration (optional — only if api_key configured)
+  // 3b. ChannelBridge — IM bridge framework
+  const channelBridge = new ChannelBridge({ hubUrl: config.hubUrl, nodeId: identity.nodeId })
+  // Auto-connect any channels saved in ~/.jackclaw/node/channels.json
+  channelBridge.autoConnect().catch((err: Error) =>
+    console.error('[bridge] autoConnect error:', err.message),
+  )
+  console.log('[bridge] ChannelBridge initialized — awaiting channel adapters')
+
+  // 3c. Moltbook integration (optional — only if api_key configured)
   const moltbookClient = new MoltbookClient()
   if (moltbookClient.isConfigured()) {
     const moltbookAgent = createMoltbookAgent(moltbookClient, aiClient, ownerMemory, identity.nodeId)
@@ -242,12 +251,12 @@ async function main() {
   process.on('SIGTERM', () => {
     console.log('[node] SIGTERM received, shutting down.')
     chatClient.stop()
-    process.exit(0)
+    channelBridge.disconnectAll().finally(() => process.exit(0))
   })
   process.on('SIGINT', () => {
     console.log('[node] SIGINT received, shutting down.')
     chatClient.stop()
-    process.exit(0)
+    channelBridge.disconnectAll().finally(() => process.exit(0))
   })
 
   console.log('🦞 JackClaw Node ready.')

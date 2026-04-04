@@ -20,6 +20,7 @@ import humanReviewRoute from './routes/human-review'
 import paymentRoute from './routes/payment'
 import planRoute from './routes/plan'
 import { chatRouter, attachChatWss } from './routes/chat'
+import { chatWorker } from './chat-worker'
 import humansRoute from './routes/humans'
 import teachRoute from './routes/teach'
 import orgNormRoute from './routes/org-norm'
@@ -27,7 +28,12 @@ import orgMemoryRoute from './routes/org-memory'
 import askRoute from './routes/ask'
 import socialRoute from './routes/social'
 import authRoute from './routes/auth'
+import filesRoute from './routes/files'
 import groupsRoute from './routes/groups'
+import federationRoute from './routes/federation'
+import receiptRoute from './routes/receipt'
+import pushRoute from './routes/push'
+import { initFederationManager } from './federation'
 import { JWTPayload } from './types'
 
 // ─── Hub Configuration ────────────────────────────────────────────────────────
@@ -127,8 +133,10 @@ function jwtAuthMiddleware(req: Request, res: Response, next: NextFunction): voi
 // ─── Server Factory ───────────────────────────────────────────────────────────
 
 export function createServer(): Application {
-  // Ensure hub keys exist at startup
-  getHubKeys()
+  // Ensure hub keys exist at startup; initialize federation manager
+  const { publicKey, privateKey } = getHubKeys()
+  const hubUrl = process.env.HUB_URL ?? `http://localhost:${process.env.HUB_PORT ?? 3100}`
+  initFederationManager(hubUrl, publicKey, privateKey)
 
   const app = express()
 
@@ -171,6 +179,12 @@ export function createServer(): Application {
   // Public: Human accounts — humanToken auth (no JWT needed)
   app.use('/api/humans', humansRoute)
 
+  // Public: receipt delivery/read status (nodes authenticate via nodeId in body)
+  app.use('/api/receipt', receiptRoute)
+
+  // Public: inter-hub federation protocol (hub-to-hub, no JWT)
+  app.use('/api/federation', federationRoute)
+
   // Protected: all other routes require JWT
   app.use('/api/', jwtAuthMiddleware)
   app.use('/api/report', reportRoute)
@@ -189,6 +203,8 @@ export function createServer(): Application {
   app.use('/api/ask', askRoute)
   app.use('/api/social', socialRoute)
   app.use('/api/groups', groupsRoute)
+  // Files: raw body handled in-route; must NOT use express.json() for these
+  app.use('/api/files', filesRoute)
 
   // 404 handler
   app.use((_req: Request, res: Response) => {

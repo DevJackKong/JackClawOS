@@ -5,6 +5,21 @@
  * 支持联系请求（名片交换）、社交消息、线程会话。
  */
 
+// ─── File Attachment ──────────────────────────────────────────────────────────
+
+export interface FileAttachment {
+  /** Hub 文件 ID */
+  fileId: string
+  /** 原始文件名 */
+  filename: string
+  /** 文件大小（字节）*/
+  size: number
+  /** MIME 类型 */
+  mimeType: string
+  /** 缩略图 URL（仅图片类型）*/
+  thumbnailUrl?: string
+}
+
 // ─── Social Message ───────────────────────────────────────────────────────────
 
 export type SocialMessageType = 'text' | 'request' | 'introduction' | 'business'
@@ -34,6 +49,8 @@ export interface SocialMessage {
   encrypted: boolean
   /** 发送方签名 */
   signature: string
+  /** 附件列表（文件/图片）*/
+  attachments?: FileAttachment[]
 }
 
 // ─── Contact Request ──────────────────────────────────────────────────────────

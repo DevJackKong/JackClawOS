@@ -1,198 +1,213 @@
-# JackClaw Quick Start
+# JackClaw Quick Start 🦞
 
-> 3 steps to run your AI company 🦞
+> From zero to your AI company in 5 minutes.
 
-[![Build](https://github.com/DevJackKong/JackClawOS/actions/workflows/ci.yml/badge.svg)](https://github.com/DevJackKong/JackClawOS/actions)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](https://nodejs.org)
-
-## Prerequisites / 前置要求
-
-- Node.js >= 20
-- npm >= 10
-
-## Option A: npm Global Install (Recommended) / npm 全局安装（推荐）
+## Option 1: Try the Demo (30 seconds)
 
 ```bash
-npm install -g @jackclaw/cli
-jackclaw demo
+npx @jackclaw/cli@latest demo
 ```
 
-Expected output / 预期输出:
-```
-🦞 JackClaw Demo — Starting CEO + 3 AI employees...
-✅ Hub ready — http://localhost:3100
-✅ Node ready — http://localhost:19000
-All services running. Ctrl+C to stop.
+This starts a Hub + registers a CEO + 3 AI employees, runs a simulated workday with reports and chat.
+
+## Option 2: Create Your Own Node (2 minutes)
+
+```bash
+# Scaffold a new project
+npx @jackclaw/create@latest my-ai-team
+cd my-ai-team
+npm install
+
+# Start your node
+npx jackclaw start
 ```
 
-→ Dashboard at [http://localhost:3100](http://localhost:3100)
+### Interactive scaffolding options
 
-## Option B: Clone & Build / 克隆并构建
+| Option | Choices | Default |
+|--------|---------|---------|
+| Project name | any | `my-jackclaw-node` |
+| Node role | worker / engineer / analyst / ceo | worker |
+| LLM provider | openai / anthropic / ollama / custom | openai |
+
+### Non-interactive mode
+
+```bash
+npx @jackclaw/create@latest my-node --role engineer --provider ollama --yes
+```
+
+## Option 3: Full Monorepo Setup (5 minutes)
 
 ```bash
 git clone https://github.com/DevJackKong/JackClawOS.git
 cd JackClawOS
 npm install
 npm run build
+
+# Run the demo
+npx jackclaw demo
+
+# Or start Hub manually
+HUB_PORT=3100 node packages/hub/dist/index.js
 ```
 
-## 1. Start Hub + Node / 启动服务 (git clone path)
+## Architecture
+
+```
+You (CEO)
+  ↓ jackclaw CLI
+Hub (:3100)  ←→  Node (Alice)  ←→  LLM (GPT-4o / Claude / Ollama)
+  ↕               ↕
+Dashboard      Node (Bob)
+  ↕
+Node (Carol)
+```
+
+## Key Commands
 
 ```bash
-npx jackclaw start
+# Hub management
+jackclaw start              # Start Hub + Node
+jackclaw stop               # Stop all
+jackclaw status             # Show running processes
+
+# Communication
+jackclaw chat --to alice    # Chat with a node
+jackclaw send "hello" alice # Quick message
+jackclaw inbox              # Check messages
+
+# Monitoring
+jackclaw hub-status         # Hub health + metrics
+jackclaw nodes              # List registered nodes
+jackclaw report             # Submit a report
 ```
 
-Expected output / 预期输出:
-```
-[hub] JackClaw Hub listening on http://localhost:3100
-[hub] Routes:
-  POST /api/register     - Node registration
-  POST /api/report       - Receive agent report
-  GET  /api/nodes        - List nodes
-  ...
-✅ Hub ready — http://localhost:3100
+## API Endpoints
 
-🦞 JackClaw Node starting...
-[node] Node ID: node-a1b2c3d4
-[hub] Registered with Hub. Status: 201
-✅ Node ready — http://localhost:19000
+Once Hub is running on `:3100`:
 
-All services running. Ctrl+C to stop.
-```
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/health` | GET | Health check |
+| `/health/detailed` | GET | System info + stats |
+| `/health/metrics` | GET | Prometheus metrics |
+| `/api/register` | POST | Register a node |
+| `/api/nodes` | GET | List nodes (JWT) |
+| `/api/chat/send` | POST | Send message |
+| `/api/chat/inbox` | GET | Pull offline messages |
+| `/api/plugins` | GET | List plugins + stats |
+| `/api/summary` | GET | Daily summary |
+| `/.well-known/agents.json` | GET | Agent Card discovery |
+| `/chat/ws` | WS | Realtime WebSocket |
 
-## 2. Send Your First Message / 发送第一条消息
+## Configuration
 
-### Register a node / 注册节点
+### Environment Variables
 
 ```bash
-# Register and get a JWT token
-TOKEN=$(curl -s -X POST http://localhost:3100/api/register \
-  -H 'Content-Type: application/json' \
-  -d '{"nodeId":"my-agent","name":"My Agent","role":"engineer","publicKey":"test"}' \
-  | jq -r '.token')
+# Hub
+HUB_PORT=3100
+JWT_SECRET=your-secret-here
 
-echo "Token: $TOKEN"
+# Node
+JACKCLAW_HUB_URL=http://localhost:3100
+LLM_PROVIDER=openai
+OPENAI_API_KEY=sk-...
 ```
 
-### Check node status / 查看节点状态 (CEO role required)
-
-```bash
-# Register as CEO first
-CEO_TOKEN=$(curl -s -X POST http://localhost:3100/api/register \
-  -H 'Content-Type: application/json' \
-  -d '{"nodeId":"ceo","name":"CEO","role":"ceo","publicKey":"test"}' \
-  | jq -r '.token')
-
-# List all nodes
-curl -s http://localhost:3100/api/nodes \
-  -H "Authorization: Bearer $CEO_TOKEN" | jq
-```
-
-### Send a chat message / 发送聊天消息
-
-```bash
-curl -s -X POST http://localhost:3100/api/chat/send \
-  -H 'Content-Type: application/json' \
-  -H "Authorization: Bearer $TOKEN" \
-  -d '{
-    "id": "msg-001",
-    "from": "my-agent",
-    "to": "ceo",
-    "content": "Login page is done. Starting auth API.",
-    "type": "text",
-    "ts": '$(date +%s000)',
-    "signature": "",
-    "encrypted": false
-  }' | jq
-```
-
-### Submit a daily report / 提交日报
-
-```bash
-curl -s -X POST http://localhost:3100/api/report \
-  -H 'Content-Type: application/json' \
-  -H "Authorization: Bearer $TOKEN" \
-  -d '{
-    "summary": "Completed login page (3h). Auth API 50% done.",
-    "period": "daily",
-    "visibility": "ceo"
-  }' | jq
-```
-
-## Connect to OpenClaw / 连接 OpenClaw
-
-Add to your `openclaw.yaml`:
+### Declarative Config (jackclaw.yaml)
 
 ```yaml
-plugins:
-  entries:
-    jackclaw:
-      path: ./packages/openclaw-plugin
-      config:
-        hubUrl: http://localhost:3100
+hub:
+  port: 3100
+  secret: my-secret
+
+nodes:
+  - name: Alice
+    role: engineer
+    provider: openai
+    model: gpt-4o
+
+  - name: Bob
+    role: designer
+    provider: anthropic
+    model: claude-sonnet-4-20250514
+
+  - name: Carol
+    role: analyst
+    provider: ollama
+    model: llama3
 ```
 
-Then use in any OpenClaw channel:
-- `/jackclaw status` — Node online status
-- `/jackclaw report` — Today's team summary
-- Say "团队汇报" or "节点状态" in natural language
+## Plugin Development
 
-## Architecture / 架构
+```typescript
+import { definePlugin } from '@jackclaw/sdk'
 
-```
-┌─────────────┐
-│   CEO (You)  │  Human — makes decisions, sets direction
-└──────┬───────┘
-       │ JWT Auth
-┌──────▼───────┐
-│     Hub      │  Central coordinator — routes messages,
-│  :3100       │  stores reports, manages trust
-└──┬───┬───┬───┘
-   │   │   │     WebSocket + REST
-┌──▼┐ ┌▼──┐ ┌▼──┐
-│ N1 │ │ N2 │ │ N3 │  Agent Nodes — each is an OpenClaw agent
-│:19k│ │:19k│ │:19k│  with its own memory, skills, and identity
-└────┘ └────┘ └────┘
-```
+export default definePlugin({
+  name: 'my-plugin',
+  version: '0.1.0',
 
-**CEO** = You (human). All high-risk decisions require your approval.
-**Hub** = HQ. Routes messages, aggregates reports, manages trust graph.
-**Node** = AI employee. Each node is a full OpenClaw agent with RSA identity.
+  commands: {
+    hello: async (ctx) => {
+      return { text: `Hello from ${ctx.node.name}!` }
+    },
+  },
 
-## Configuration / 配置
+  events: {
+    'message:send': async (ctx, event) => {
+      ctx.log(`Message sent to ${event.to}`)
+    },
+  },
 
-Node config is at `~/.jackclaw/config.json`:
-
-```json
-{
-  "hubUrl": "http://localhost:3100",
-  "port": 19000,
-  "nodeName": "engineer-alice",
-  "nodeRole": "engineer",
-  "reportCron": "0 8 * * *",
-  "visibility": {
-    "shareMemory": true,
-    "shareTasks": true
-  }
-}
+  schedules: {
+    morningReport: {
+      cron: '0 9 * * *',
+      handler: async (ctx) => {
+        await ctx.report({ summary: 'Good morning!' })
+      },
+    },
+  },
+})
 ```
 
-## Run E2E Tests / 运行测试
+## OpenClaw Integration
+
+JackClaw works as an OpenClaw plugin:
 
 ```bash
-node tests/e2e.js
+# In your OpenClaw config
+npx jackclaw start --openclaw
 ```
 
-71 assertions covering: registration, auth, node listing, reports, chat, directory, collaboration, memory search, payment vault.
+This bridges your OpenClaw agent with JackClaw's multi-agent collaboration.
 
-## What's Next / 下一步
+## Packages
 
-- `npm create jackclaw@latest my-team` — Scaffold a new team
-- Dashboard at `http://localhost:3100` (real-time web UI)
-- `jackclaw start --tunnel` — instant public URL via cloudflared
-- Multi-hub federation (roadmap)
+| Package | Description |
+|---------|-------------|
+| `@jackclaw/cli` | CLI tool |
+| `@jackclaw/hub` | Central orchestrator |
+| `@jackclaw/node` | AI agent worker |
+| `@jackclaw/protocol` | Encrypted messaging |
+| `@jackclaw/sdk` | Plugin SDK |
+| `@jackclaw/llm-gateway` | Multi-model LLM gateway |
+| `@jackclaw/memory` | 4-layer agent memory |
+| `@jackclaw/watchdog` | Security monitoring |
+| `@jackclaw/openclaw-plugin` | OpenClaw integration |
+| `@jackclaw/create` | Project scaffolding |
+| `@jackclaw/tunnel` | HTTPS tunneling |
+| `@jackclaw/harness` | Agent testing |
+| `@jackclaw/payment-vault` | Payment compliance |
+
+## Links
+
+- **GitHub**: https://github.com/DevJackKong/JackClawOS
+- **npm**: https://www.npmjs.com/org/jackclaw
+- **License**: MIT
 
 ---
 
-[Full README](README.md) · [Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md)
+**Built by [Jack](https://github.com/DevJackKong) 🦞**
+
+*One person. Fifty AI agents. That's JackClaw.*

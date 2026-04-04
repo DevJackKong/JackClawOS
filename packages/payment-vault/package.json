@@ -25,7 +25,6 @@
     "LICENSE"
   ],
   "license": "MIT",
-  "private": true,
   "keywords": [
     "jackclaw",
     "payment",

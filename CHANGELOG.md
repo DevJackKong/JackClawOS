@@ -1,61 +1,57 @@
 # Changelog
 
-All notable changes to JackClaw will be documented here.
+## v0.2.0 (2026-04-04)
 
-## [0.1.0] — 2026-04-03
+### 🚀 Major Features
 
-### 🎉 Initial Release
+- **Message Reliability** — 6-state message state machine (accepted → sent → acked → stored → consumed → failed) with delivery ACK, deduplication, and WAL
+- **Unified Identity Model** — 6 branded types (HumanId, AgentHandle, NodeId, HubId, ThreadId, DeliveryTarget) with compile-time safety
+- **EventBus** — Pub/sub event system with wildcard patterns (~160 lines). All plugins communicate through events, not direct imports
+- **Plugin Manager** — Load/unload plugins with sandboxed API (on/emit/log/getConfig/store)
+- **Context Store** — LLM-aware context management with auto-summary compression. WebSocket routing = 0 tokens; AI calls use summary + recent K (~80% token savings)
+- **CostTracker** — Per-model, per-node, per-day LLM usage and cost tracking with budget alerts
+- **AnomalyDetector** — Sliding-window behavioral anomaly detection (message flood, login brute force, bulk export)
+- **AuditLog** — Append-only immutable audit trail with JSONL export for compliance
 
-First public release of JackClaw — Cross-Agent Collaboration Framework.
+### 📦 Infrastructure
 
-#### Core
-- **Hub** — Central orchestrator with REST API + WebSocket
-- **Node** — AI agent worker with auto-registration, cron reports, task execution
-- **Protocol** — RSA-4096 + AES-256 encrypted messaging, JWT auth
-- **ClawChat** — Real-time messaging (WebSocket + REST): DMs, threads, groups
+- **All 14 packages bumped to 0.2.0**
+- **11 packages published to npm** (@jackclaw/cli, create, hub, node, protocol, sdk, llm-gateway, memory, harness, openclaw-plugin, tunnel, watchdog, payment-vault)
+- **Agent Card discovery** at `/.well-known/agents.json` (A2A + OpenAgents compatible)
+- **CLI quick commands**: `jackclaw send`, `jackclaw inbox`, `jackclaw hub-status`
+- **Declarative config**: `jackclaw.yaml` (CrewAI-style simple YAML)
+- **Health API**: `/health`, `/health/detailed`, `/health/metrics` (Prometheus format)
+- **GitHub Actions CI** workflow
+- **QUICKSTART.md** — Full getting started guide
+- **CONTRIBUTING.md** — Contributor guide
 
-#### LLM Gateway (`@jackclaw/llm-gateway`)
-- **16 providers** out of the box (set API key → works)
-- International: OpenAI, Anthropic (Claude), Google (Gemini), DeepSeek, Groq, Mistral, Together, OpenRouter, Ollama
-- Chinese: 通义千问, 文心一言, 混元, 讯飞星火, Kimi, 智谱GLM (free tier!), 百川
-- Auto-routing by model name prefix
-- Fallback chain, cost estimation, stats tracking
-- `gateway.fast()` / `.smart()` / `.local()` shortcuts
+### 🧪 Testing
 
-#### CLI
-- `jackclaw start` — one-command Hub + Node launch
-- `jackclaw start --tunnel` — instant public URL via cloudflared
-- `jackclaw start --nodes 3` — multi-node parallel launch
-- `jackclaw demo` — 30-second showcase (CEO + 3 AI employees)
-- `jackclaw chat` — terminal ClawChat
+- **83 unit tests** across 14 suites (Protocol, Hub, LLM Gateway, Watchdog)
+- **158 E2E assertions** covering registration, messaging, federation, health, plugins, and more
+- **0 failures**
 
-#### Dashboard
-- Real-time web UI at `http://localhost:3100`
-- Live: node status, daily reports, messages
-- Built-in ClawChat panel (WebSocket)
-- 💰 Pending Payments with Approve/Reject buttons
+### 📊 Extended Message Types
 
-#### Memory (`@jackclaw/memory`)
-- 4-category memory system: feedback / user / project / reference
-- 3 scopes: private / shared / teaching
-- `semanticQuery()` — TF-IDF + optional LLM embedding
-- `POST /api/memory/search` — HTTP semantic search
+```typescript
+type ChatMessageType =
+  | 'text' | 'card' | 'task' | 'transaction' | 'media'
+  | 'reminder' | 'calendar' | 'approval' | 'system'
+  | `x-${string}`  // custom extensions
+```
 
-#### SDK (`@jackclaw/sdk`)
-- `definePlugin()` / `defineNode()` factory
-- Built-in examples: weather, translator, daily-reporter
-- Mock context helpers for unit testing
+### 🏗️ Node Local Store
 
-#### Payment Vault
-- CEO-approval workflow: submit → compliance check → approve/reject → execute
-- Dashboard integration
+- `sql.js` (pure WASM) replaces `better-sqlite3` to avoid native compilation issues
+- Works in both Hub and Node environments
 
-#### Security
-- All messages signed + encrypted (RSA-4096 + AES-256)
-- JWT authentication for protected routes
-- Human-in-loop for high-risk operations
+---
 
-### Stats
-- 14 packages in monorepo
-- 71 E2E test assertions
-- ~15,000 lines of TypeScript
+## v0.1.0 (2026-03-31)
+
+Initial release with 14 packages:
+- Protocol (RSA-4096 + AES-256 encryption)
+- Hub (REST + WebSocket orchestrator)
+- Node (AI agent worker)
+- CLI, LLM Gateway, Memory, SDK, Dashboard, Watchdog
+- Payment Vault, Harness, Tunnel, OpenClaw Plugin, create-jackclaw

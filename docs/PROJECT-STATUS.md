@@ -1,6 +1,6 @@
 # JackClaw 项目总览
 
-> v0.1.0 | 15 packages | 201 files | 33,913 行 TypeScript | 94 commits | MIT
+> v0.2.0 | 15 packages | 223 files | 37,054 行 TypeScript | MIT
 
 ## 一、架构总览
 
@@ -28,19 +28,19 @@
 
 | 包 | 代码量 | 状态 | 说明 |
 |---|--------|------|------|
-| **protocol** | 1,718 行 | ✅ 完成 | 消息/加密/身份/信任/社交/联邦/支付/任务束/回执/日程 |
-| **hub** | 9,174 行 | ✅ 运行中 | 28 个 API 路由 + WS + 离线队列 + 群聊 + 联邦 |
-| **node** | 9,610 行 | ✅ 运行中 | Agent 执行 + 任务链 + 渠道桥接（飞书/Discord/TG/WA/微信） |
-| **cli** | 5,029 行 | ✅ 可用 | jackclaw 命令行工具，完整子命令 |
-| **llm-gateway** | 2,079 行 | ✅ 可用 | 多模型路由（OpenAI/Anthropic/本地） |
+| **protocol** | 1,736 行 | ✅ 完成 | 消息/加密/身份/信任/社交/联邦/支付/任务束/回执/日程 |
+| **hub** | 10,451 行 | ✅ 运行中 | 28 个 API 路由 + WS + 离线队列 + 群聊 + 联邦 |
+| **node** | 9,814 行 | ✅ 运行中 | Agent 执行 + 任务链 + 渠道桥接（飞书/Discord/TG/WA/微信） |
+| **cli** | 5,319 行 | ✅ 可用 | jackclaw 命令行工具，完整子命令 |
+| **llm-gateway** | 2,259 行 | ✅ 可用 | 多模型路由（OpenAI/Anthropic/本地） |
 | **memory** | 1,172 行 | ✅ 可用 | 4 分类记忆 + L1 缓存 + 语义搜索 + 协作/教学 |
 | **openclaw-plugin** | 1,486 行 | ✅ 可用 | OpenClaw 原生插件封装 |
 | **payment-vault** | 411 行 | ✅ 类型完成 | 6 司法区合规引擎 |
 | **harness** | 695 行 | ✅ 可用 | Agent 测试/调试框架 |
-| **jackclaw-sdk** | 554 行 | ✅ 可用 | 第三方开发 SDK |
-| **watchdog** | 567 行 | ✅ 可用 | 安全监控 + 异常检测 |
+| **jackclaw-sdk** | 564 行 | ✅ 可用 | 第三方开发 SDK |
+| **watchdog** | 859 行 | ✅ 可用 | 安全监控 + 异常检测 |
 | **dashboard** | 505 行 | ✅ 基础 | Web 管理面板 |
-| **create-jackclaw** | 498 行 | ✅ 可用 | `npx create-jackclaw` 脚手架 |
+| **create-jackclaw** | 439 行 | ✅ 可用 | `npx create-jackclaw` 脚手架 |
 | **tunnel** | 415 行 | ✅ 可用 | Cloudflare 隧道管理 |
 | **pwa** | 静态 | 🟡 框架 | ClawChat PWA 客户端 |
 

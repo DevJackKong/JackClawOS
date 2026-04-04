@@ -1,69 +1,100 @@
-# Contributing to JackClawOS
+# Contributing to JackClaw 🦞
 
-Thank you for your interest in contributing! 🦞
+Thanks for your interest in contributing! Here's how to get started.
 
-## Quick Start
+## Development Setup
 
 ```bash
 git clone https://github.com/DevJackKong/JackClawOS.git
 cd JackClawOS
 npm install
 npm run build
-npm test
 ```
 
-## Contributor License Agreement (CLA)
+## Running Tests
 
-By submitting a pull request, you agree to our [CLA](./CLA.md). No separate signed document is needed — opening a PR constitutes agreement.
+```bash
+# Unit tests (all packages)
+npx tsx --test packages/protocol/tests/*.test.ts
+npx tsx --test packages/hub/tests/*.test.ts
+npx tsx --test packages/llm-gateway/tests/*.test.ts
+npx tsx --test packages/watchdog/tests/*.test.ts
 
-## How to Contribute
+# E2E tests (starts Hub automatically)
+node tests/e2e.js
+```
 
-### Reporting Bugs
-- Search [existing issues](https://github.com/DevJackKong/JackClawOS/issues) first
-- Include: steps to reproduce, expected behavior, actual behavior, environment info
-
-### Suggesting Features
-- Open a [GitHub Discussion](https://github.com/DevJackKong/JackClawOS/discussions) or Issue
-- Describe the use case, not just the solution
-
-### Code Contributions
-
-1. Fork the repo
-2. Create a feature branch: `git checkout -b feat/my-feature`
-3. Write code + tests
-4. Ensure `npm run build` passes with zero errors
-5. Ensure `npm test` passes
-6. Commit with conventional commits: `feat:`, `fix:`, `docs:`, `test:`, `chore:`
-7. Open a PR against `main`
-
-### Code Style
-- TypeScript strict mode
-- No `any` types (use `unknown` + type guards)
-- Async/await over callbacks
-- Meaningful variable names
-
-### Security Vulnerabilities
-**DO NOT** open a public issue. Email security@jackclaw.ai instead. See [SECURITY.md](./SECURITY.md).
-
-## Architecture
+## Project Structure
 
 ```
 packages/
-├── protocol/     # Core types + E2E encryption
-├── hub/          # Central coordinator
-├── node/         # Agent worker
-├── memory/       # 4-layer memory system
-├── cli/          # Command-line interface
-├── dashboard/    # React web UI
-├── llm-gateway/  # Multi-model gateway
-├── pwa/          # Progressive Web App
-└── ...           # See README for full list
+├── hub/          # Central orchestrator (Express + WebSocket)
+├── node/         # AI agent worker
+├── protocol/     # Types, crypto, identity
+├── cli/          # Command-line tool
+├── llm-gateway/  # Multi-model LLM routing
+├── memory/       # 4-layer agent memory
+├── sdk/          # Plugin development SDK
+├── watchdog/     # Security monitoring
+├── openclaw-plugin/ # OpenClaw integration
+├── create-jackclaw/ # Project scaffolding
+├── harness/      # Agent testing framework
+├── tunnel/       # HTTPS tunneling
+├── payment-vault/# Payment compliance
+├── dashboard/    # Web UI (React)
+└── pwa/          # Progressive Web App
+tests/
+└── e2e.js        # End-to-end integration tests
 ```
 
-## License
+## Writing Tests
 
-MIT. By contributing, you agree your code will be released under MIT.
+We use Node's built-in test runner (`node:test` + `node:assert/strict`):
+
+```typescript
+import { describe, it } from 'node:test'
+import assert from 'node:assert/strict'
+
+describe('MyFeature', () => {
+  it('does something', () => {
+    assert.equal(1 + 1, 2)
+  })
+})
+```
+
+Run with: `npx tsx --test packages/your-package/tests/*.test.ts`
+
+## Commit Convention
+
+```
+feat: add new feature
+fix: bug fix
+test: add or update tests
+docs: documentation changes
+chore: maintenance (deps, config)
+refactor: code restructuring
+```
+
+## Pull Request Process
+
+1. Fork the repo
+2. Create a feature branch (`git checkout -b feat/my-feature`)
+3. Write tests for new functionality
+4. Ensure all tests pass
+5. Submit a PR with a clear description
+
+## Code Style
+
+- TypeScript strict mode
+- No external test frameworks (use `node:test`)
+- Keep files under ~250 lines
+- Branded types for identity (`HumanId`, `AgentHandle`, etc.)
+- Plugin system uses EventBus — don't import Hub internals
+
+## Questions?
+
+Open an issue on GitHub or reach out via the project discussions.
 
 ---
 
-*Questions? Email JackClaw@jackclaw.ai*
+**License**: MIT

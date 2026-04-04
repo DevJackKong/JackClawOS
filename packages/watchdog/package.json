@@ -24,7 +24,6 @@
     "LICENSE"
   ],
   "license": "MIT",
-  "private": true,
   "keywords": [
     "jackclaw",
     "watchdog",

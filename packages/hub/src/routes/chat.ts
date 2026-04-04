@@ -208,6 +208,26 @@ router.get('/humans', (_req: Request, res: Response) => {
 
 export { router as chatRouter }
 
+/**
+ * 向指定 nodeId 的 WebSocket 推送事件（供 social 路由复用）
+ * 如果 node 离线，返回 false，调用方负责入队
+ */
+export function pushToNodeWs(nodeId: string, event: string, data: unknown): boolean {
+  const ws = wsClients.get(nodeId)
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ event, data }))
+    return true
+  }
+  return false
+}
+
+/**
+ * 获取指定 nodeId 的 WebSocket 连接（social 路由离线队列用）
+ */
+export function getNodeWs(nodeId: string): import('ws').WebSocket | undefined {
+  return wsClients.get(nodeId)
+}
+
 // ─── WebSocket 服务 ───────────────────────────────────────────────────────────
 
 export function attachChatWss(server: import('http').Server): WebSocketServer {

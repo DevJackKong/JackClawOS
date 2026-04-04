@@ -25,6 +25,7 @@ import teachRoute from './routes/teach'
 import orgNormRoute from './routes/org-norm'
 import orgMemoryRoute from './routes/org-memory'
 import askRoute from './routes/ask'
+import socialRoute from './routes/social'
 import { JWTPayload } from './types'
 
 // ─── Hub Configuration ────────────────────────────────────────────────────────
@@ -181,6 +182,7 @@ export function createServer(): Application {
   app.use('/api/org-norm', orgNormRoute)
   app.use('/api/org-memory', orgMemoryRoute)
   app.use('/api/ask', askRoute)
+  app.use('/api/social', socialRoute)
 
   // 404 handler
   app.use((_req: Request, res: Response) => {

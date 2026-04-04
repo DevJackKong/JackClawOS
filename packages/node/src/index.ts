@@ -22,6 +22,7 @@ import { NodeChatClient } from './chat-client'
 import { getOwnerMemory } from './owner-memory'
 import { MemoryManager, MemDirSync } from '@jackclaw/memory'
 import { createNodeGateway } from './llm-gateway'
+import { SocialHandler } from './social-handler'
 
 async function main() {
   console.log('🦞 JackClaw Node starting...')
@@ -50,7 +51,21 @@ async function main() {
   const ownerMemory = getOwnerMemory(identity.nodeId)
   const chatClient = new NodeChatClient(identity.nodeId, config.hubUrl)
 
+  // 1c. Init Social Handler
+  const socialHandler = new SocialHandler({
+    nodeId: identity.nodeId,
+    agentHandle: (config as any).agentHandle,
+    hubUrl: config.hubUrl,
+    webhookUrl: (config as any).webhookUrl,
+    humanId: (config as any).humanId,
+  })
+
   chatClient.onMessage((msg) => {
+    // Route social events to SocialHandler first
+    if (msg.type === 'social' || msg.type === 'social_contact_request' || msg.type === 'social_contact_response') {
+      socialHandler.handleEvent(msg.type, msg)
+      return
+    }
     if (msg.type === 'task') {
       handleTask(
         { taskId: msg.id, action: 'ai', params: { prompt: msg.content, title: `chat:${msg.id}` } },

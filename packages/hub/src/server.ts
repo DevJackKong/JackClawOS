@@ -33,6 +33,7 @@ import groupsRoute from './routes/groups'
 import federationRoute from './routes/federation'
 import receiptRoute from './routes/receipt'
 import traceRoute from './routes/trace'
+import healthRoute from './routes/health'
 import profilePageRoute from './routes/profile-page'
 import moltbookRoute from './routes/moltbook'
 import tasksRoute from './routes/tasks'
@@ -187,10 +188,8 @@ export function createServer(): Application {
     app.use(express.static(publicDir))
   }
 
-  // Health check (no auth)
-  app.get('/health', (_req: Request, res: Response) => {
-    res.json({ status: 'ok', service: 'jackclaw-hub', ts: Date.now() })
-  })
+  // Health check & observability (no auth)
+  app.use('/health', healthRoute)
 
   // Public: node registration (no JWT required — nodes need a token first)
   app.use('/api/register', registerRoute)

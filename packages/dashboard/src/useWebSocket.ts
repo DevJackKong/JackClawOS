@@ -1,8 +1,13 @@
-// ClawChat WebSocket hook — auto-reconnect, message streaming, connection state
+// ClawChat WebSocket hook — supports JWT token auth, auto-reconnect, social message envelopes
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { SocialMessage } from './api.js';
 
-const WS_BASE = 'ws://localhost:3100';
+const WS_BASE =
+  typeof window !== 'undefined'
+    ? `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`
+    : 'ws://localhost:3100';
+
 const RECONNECT_DELAY_MS = 2000;
 const MAX_RECONNECT_ATTEMPTS = 10;
 
@@ -16,6 +21,7 @@ export interface WsMessage {
 
 export interface UseWebSocketResult {
   messages: WsMessage[];
+  socialMessages: SocialMessage[];
   send: (content: string) => void;
   connected: boolean;
   connecting: boolean;
@@ -23,8 +29,16 @@ export interface UseWebSocketResult {
   clearMessages: () => void;
 }
 
-export function useWebSocket(nodeId: string | null): UseWebSocketResult {
+/**
+ * token: JWT user token — connects via ?token=<jwt> (recommended, auth-verified).
+ * Alternatively pass nodeId directly via nodeId param for node clients.
+ */
+export function useWebSocket(
+  nodeId: string | null,
+  token?: string | null,
+): UseWebSocketResult {
   const [messages, setMessages] = useState<WsMessage[]>([]);
+  const [socialMessages, setSocialMessages] = useState<SocialMessage[]>([]);
   const [connected, setConnected] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -33,15 +47,20 @@ export function useWebSocket(nodeId: string | null): UseWebSocketResult {
   const attemptsRef = useRef(0);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const nodeIdRef = useRef(nodeId);
+  const tokenRef = useRef(token);
   nodeIdRef.current = nodeId;
+  tokenRef.current = token;
 
-  const clearMessages = useCallback(() => setMessages([]), []);
+  const clearMessages = useCallback(() => {
+    setMessages([]);
+    setSocialMessages([]);
+  }, []);
 
   const connect = useCallback(() => {
-    const id = nodeIdRef.current;
-    if (!id) return;
+    const id  = nodeIdRef.current;
+    const tok = tokenRef.current;
+    if (!id && !tok) return;
 
-    // Clean up any existing socket
     if (wsRef.current) {
       wsRef.current.onclose = null;
       wsRef.current.onerror = null;
@@ -52,7 +71,11 @@ export function useWebSocket(nodeId: string | null): UseWebSocketResult {
     setConnecting(true);
     setError(null);
 
-    const ws = new WebSocket(`${WS_BASE}/chat/ws?nodeId=${encodeURIComponent(id)}`);
+    // Prefer JWT token auth; fall back to nodeId
+    const param = tok
+      ? `token=${encodeURIComponent(tok)}`
+      : `nodeId=${encodeURIComponent(id ?? '')}`;
+    const ws = new WebSocket(`${WS_BASE}/chat/ws?${param}`);
     wsRef.current = ws;
 
     ws.onopen = () => {
@@ -64,27 +87,46 @@ export function useWebSocket(nodeId: string | null): UseWebSocketResult {
 
     ws.onmessage = (event: MessageEvent<string>) => {
       try {
-        const data = JSON.parse(event.data) as Partial<WsMessage>;
-        const msg: WsMessage = {
-          id: data.id ?? crypto.randomUUID(),
-          role: data.role ?? 'assistant',
-          content: data.content ?? String(event.data),
-          timestamp: data.timestamp ?? Date.now(),
-          nodeId: data.nodeId ?? id,
-        };
-        setMessages(prev => [...prev, msg]);
+        const envelope = JSON.parse(event.data) as { event?: string; data?: unknown } & Partial<WsMessage>;
+
+        // Social message envelope
+        if (envelope.event === 'social' && envelope.data) {
+          setSocialMessages(prev => [...prev, envelope.data as SocialMessage]);
+          return;
+        }
+
+        // Chat message envelope
+        if (envelope.event === 'message' && envelope.data) {
+          const d = envelope.data as Partial<WsMessage>;
+          setMessages(prev => [...prev, {
+            id: d.id ?? crypto.randomUUID(),
+            role: d.role ?? 'assistant',
+            content: (d as { content?: string }).content ?? '',
+            timestamp: (d as { ts?: number }).ts ?? Date.now(),
+          }]);
+          return;
+        }
+
+        // ack / receipt — ignore silently
+        if (envelope.event === 'ack' || envelope.event === 'receipt') return;
+
+        // Legacy flat message format (old node protocol)
+        if (envelope.content != null) {
+          setMessages(prev => [...prev, {
+            id: envelope.id ?? crypto.randomUUID(),
+            role: envelope.role ?? 'assistant',
+            content: envelope.content ?? '',
+            timestamp: envelope.timestamp ?? Date.now(),
+          }]);
+        }
       } catch {
-        // Raw text message
-        setMessages(prev => [
-          ...prev,
-          {
-            id: crypto.randomUUID(),
-            role: 'assistant',
-            content: String(event.data),
-            timestamp: Date.now(),
-            nodeId: id,
-          },
-        ]);
+        // Raw text fallback
+        setMessages(prev => [...prev, {
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          content: String(event.data),
+          timestamp: Date.now(),
+        }]);
       }
     };
 
@@ -93,7 +135,8 @@ export function useWebSocket(nodeId: string | null): UseWebSocketResult {
       setConnecting(false);
       wsRef.current = null;
 
-      if (attemptsRef.current < MAX_RECONNECT_ATTEMPTS && nodeIdRef.current) {
+      const hasAuth = nodeIdRef.current || tokenRef.current;
+      if (attemptsRef.current < MAX_RECONNECT_ATTEMPTS && hasAuth) {
         attemptsRef.current++;
         const delay = RECONNECT_DELAY_MS * Math.min(attemptsRef.current, 5);
         reconnectTimer.current = setTimeout(connect, delay);
@@ -108,12 +151,12 @@ export function useWebSocket(nodeId: string | null): UseWebSocketResult {
     };
   }, []);
 
-  // Reconnect when nodeId changes
+  // Reconnect when nodeId or token changes
   useEffect(() => {
     if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
     attemptsRef.current = 0;
 
-    if (nodeId) {
+    if (nodeId || token) {
       connect();
     } else {
       wsRef.current?.close();
@@ -129,23 +172,23 @@ export function useWebSocket(nodeId: string | null): UseWebSocketResult {
         wsRef.current = null;
       }
     };
-  }, [nodeId, connect]);
+  }, [nodeId, token, connect]);
 
   const send = useCallback((content: string) => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
       setError('未连接，无法发送');
       return;
     }
+    const id = nodeIdRef.current;
     const msg: WsMessage = {
       id: crypto.randomUUID(),
       role: 'user',
       content,
       timestamp: Date.now(),
     };
-    // Optimistic local render
     setMessages(prev => [...prev, msg]);
-    wsRef.current.send(JSON.stringify({ type: 'message', content }));
+    wsRef.current.send(JSON.stringify({ type: 'message', content, nodeId: id }));
   }, []);
 
-  return { messages, send, connected, connecting, error, clearMessages };
+  return { messages, socialMessages, send, connected, connecting, error, clearMessages };
 }

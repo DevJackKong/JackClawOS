@@ -55,6 +55,7 @@ export const ProfilePage: React.FC = () => {
     displayName: displayName || user.displayName,
     bio,
     avatar,
+    agentNodeId: user.agentNodeId ?? '',
   };
 
   return (    <div className="profile-page">

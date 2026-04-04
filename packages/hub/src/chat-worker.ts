@@ -13,6 +13,7 @@
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
+import jwt from 'jsonwebtoken'
 import { WebSocketServer, WebSocket } from 'ws'
 import type { IncomingMessage } from 'http'
 import { ChatStore, ChatMessage } from './store/chat'
@@ -188,8 +189,25 @@ export class ChatWorker {
     const wss = new WebSocketServer({ server, path: '/chat/ws' })
 
     wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
-      const url    = new URL(req.url ?? '', 'http://localhost')
-      const nodeId = url.searchParams.get('nodeId')
+      const url       = new URL(req.url ?? '', 'http://localhost')
+      let nodeId      = url.searchParams.get('nodeId')
+      const tokenParam = url.searchParams.get('token')
+
+      // JWT auth: verify token → derive nodeId from the user's agentNodeId
+      if (!nodeId && tokenParam) {
+        try {
+          // Lazy imports to avoid load-time circular deps
+          // eslint-disable-next-line @typescript-eslint/no-var-requires
+          const { JWT_SECRET } = require('./server') as typeof import('./server')
+          // eslint-disable-next-line @typescript-eslint/no-var-requires
+          const { userStore } = require('./store/users') as typeof import('./store/users')
+          const payload = jwt.verify(tokenParam, JWT_SECRET) as { handle?: string }
+          if (payload.handle) {
+            const user = userStore.getUser(payload.handle)
+            if (user?.agentNodeId) nodeId = user.agentNodeId
+          }
+        } catch { /* invalid token — nodeId stays null → close below */ }
+      }
 
       if (!nodeId) {
         ws.close(4001, 'nodeId required')

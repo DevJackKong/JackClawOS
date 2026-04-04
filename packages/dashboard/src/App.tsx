@@ -1,10 +1,10 @@
-// App.tsx — Tab navigation integrating NodeList, ChatPanel, TokenStats, ReportsList, PlanViewer
+// App.tsx — Tab navigation integrating NodeList, ChatApp (social), TokenStats, ReportsList, PlanViewer
 // Auth: wraps with AuthProvider; shows AuthPage when logged out
 
 import React, { useEffect, useState } from 'react';
 import { api } from './api.js';
 import { NodeList } from './components/NodeList.js';
-import { ChatPanel } from './components/ChatPanel.js';
+import { ChatApp } from './components/ChatApp.js';
 import { TokenStats } from './components/TokenStats.js';
 import { ReportsList } from './components/ReportsList.js';
 import { PlanViewer } from './components/PlanViewer.js';
@@ -161,8 +161,8 @@ const Dashboard: React.FC = () => {
         </div>
       )}
 
-      {/* ── Node selector (shown when Chat tab active) ── */}
-      {tab === 'chat' && (
+      {/* ── Node selector (shown when Chat tab active AND no user logged in) ── */}
+      {tab === 'chat' && !user && (
         <div className="node-selector-bar" style={{ background: '#161b22', borderBottom: '1px solid #30363d' }}>
           <span className="ns-label">目标节点：</span>
           <input
@@ -191,7 +191,18 @@ const Dashboard: React.FC = () => {
         ) : (
           <>
             {tab === 'nodes'    && <NodeList token={hubToken} />}
-            {tab === 'chat'     && <ChatPanel token={hubToken} nodeId={selectedNode} />}
+            {tab === 'chat'     && user && hubToken ? (
+              <ChatApp
+                token={hubToken}
+                userHandle={`@${user.handle}`}
+                displayName={user.displayName}
+              />
+            ) : tab === 'chat' ? (
+              <div className="no-config">
+                <div className="no-config-icon" style={{ color: '#f97316' }}>◈</div>
+                <div className="no-config-text">请先登录以使用社交聊天</div>
+              </div>
+            ) : null}
             {tab === 'reports'  && <ReportsList token={hubToken} />}
             {tab === 'plan'     && <PlanViewer token={hubToken} />}
             {tab === 'stats'    && <TokenStats token={hubToken} />}

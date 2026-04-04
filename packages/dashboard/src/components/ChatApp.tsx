@@ -1,192 +1,250 @@
-// ChatApp — 完整聊天应用主组件：会话列表 + 消息区域 + 输入框
+// ChatApp — Social messaging: thread list (left) + message area (right)
+// Connects to hub via JWT-authenticated WebSocket for real-time delivery.
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { api, type ChatThread, type ChatMessage } from '../api.js';
+import { api, type SocialMessage, type SocialThread } from '../api.js';
 import { useWebSocket } from '../useWebSocket.js';
-import { MessageBubble } from './MessageBubble.js';
-import { ThreadList } from './ThreadList.js';
-import { ChatInput } from './ChatInput.js';
-import { EmojiPicker } from './EmojiPicker.js';
 
 interface Props {
   token: string;
-  nodeId: string | null;
+  userHandle: string;    // @alice
+  displayName: string;
 }
 
-type MsgType = 'human' | 'task' | 'ask';
+function fmtTime(ts: number): string {
+  return new Date(ts).toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit' });
+}
 
-export const ChatApp: React.FC<Props> = ({ token, nodeId }) => {
-  const [threads, setThreads] = useState<ChatThread[]>([]);
-  const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
-  const [histMessages, setHistMessages] = useState<ChatMessage[]>([]);
-  const [inputText, setInputText] = useState('');
-  const [msgType, setMsgType] = useState<MsgType>('human');
-  const [loadingThread, setLoadingThread] = useState(false);
-  const [sending, setSending] = useState(false);
-  const [showEmoji, setShowEmoji] = useState(false);
-  const [replyTo, setReplyTo] = useState<ChatMessage | null>(null);
+function otherParticipant(thread: SocialThread, myHandle: string): string {
+  return thread.participants.find(p => p !== myHandle) ?? thread.participants[0] ?? '?';
+}
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+export const ChatApp: React.FC<Props> = ({ token, userHandle, displayName }) => {
+  const [threads, setThreads]       = useState<SocialThread[]>([]);
+  const [activeThread, setActive]   = useState<SocialThread | null>(null);
+  const [messages, setMessages]     = useState<SocialMessage[]>([]);
+  const [inputText, setInputText]   = useState('');
+  const [sending, setSending]       = useState(false);
+  const [loadingMsgs, setLoadingMsgs] = useState(false);
 
-  const { messages: wsMessages, send: wsSend, connected, connecting } = useWebSocket(nodeId);
+  const bottomRef = useRef<HTMLDivElement>(null);
 
-  // ── Load thread list ────────────────────────────────────────────────────────
+  // JWT-authenticated WebSocket — receives social messages in real-time
+  const { socialMessages, connected, connecting } = useWebSocket(null, token);
+
+  // ── Load threads ──────────────────────────────────────────────────────────
+  const loadThreads = useCallback(() => {
+    if (!userHandle) return;
+    api.social.threads(token, userHandle)
+      .then(r => setThreads(r.threads))
+      .catch(() => {});
+  }, [token, userHandle]);
+
+  useEffect(() => { loadThreads(); }, [loadThreads]);
+
+  // ── Load messages for active thread ──────────────────────────────────────
   useEffect(() => {
-    if (!nodeId) return;
-    let cancelled = false;
+    if (!activeThread) { setMessages([]); return; }
+    setLoadingMsgs(true);
+    api.social.messages(token, userHandle, 100)
+      .then(r => {
+        const threadMsgs = r.messages.filter(m => m.thread === activeThread.id);
+        setMessages(threadMsgs.sort((a, b) => a.ts - b.ts));
+      })
+      .catch(() => setMessages([]))
+      .finally(() => setLoadingMsgs(false));
+  }, [token, userHandle, activeThread]);
 
-    api.chat.threads(token, nodeId)
-      .then(res => { if (!cancelled) setThreads(res.threads); })
-      .catch(() => { /* silent */ });
-
-    return () => { cancelled = true; };
-  }, [token, nodeId]);
-
-  // ── Load thread messages ────────────────────────────────────────────────────
+  // ── Append real-time social messages ──────────────────────────────────────
   useEffect(() => {
-    if (!activeThreadId) {
-      setHistMessages([]);
-      return;
+    if (socialMessages.length === 0) return;
+    const latest = socialMessages[socialMessages.length - 1];
+    if (!latest) return;
+
+    // Append to active thread if it matches, or refresh threads
+    if (activeThread && latest.thread === activeThread.id) {
+      setMessages(prev => {
+        if (prev.some(m => m.id === latest.id)) return prev;
+        return [...prev, latest];
+      });
     }
-    setLoadingThread(true);
+    // Refresh thread list to update last message preview
+    loadThreads();
+  }, [socialMessages, activeThread, loadThreads]);
 
-    api.chat.thread(token, activeThreadId)
-      .then(res => setHistMessages(res.messages))
-      .catch(() => setHistMessages([]))
-      .finally(() => setLoadingThread(false));
-  }, [token, activeThreadId]);
-
-  // ── Auto-scroll ─────────────────────────────────────────────────────────────
+  // ── Auto-scroll ───────────────────────────────────────────────────────────
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [histMessages, wsMessages]);
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
 
-  // ── Send message ────────────────────────────────────────────────────────────
+  // ── Title blink on new message ────────────────────────────────────────────
+  useEffect(() => {
+    if (socialMessages.length === 0) return;
+    const orig = document.title;
+    document.title = '● 新消息 — JackClaw';
+    const t = setTimeout(() => { document.title = orig; }, 3000);
+    return () => { clearTimeout(t); document.title = orig; };
+  }, [socialMessages.length]);
+
+  // ── Send message ──────────────────────────────────────────────────────────
   const handleSend = useCallback(async () => {
     const text = inputText.trim();
-    if (!text || !nodeId) return;
+    if (!text || !activeThread) return;
 
-    setInputText('');
+    const toAgent = otherParticipant(activeThread, userHandle);
     setSending(true);
-    setReplyTo(null);
+    setInputText('');
 
-    if (connected) {
-      wsSend(text);
+    const optimistic: SocialMessage = {
+      id: crypto.randomUUID(),
+      fromHuman: displayName,
+      fromAgent: userHandle,
+      toAgent,
+      content: text,
+      type: 'text',
+      thread: activeThread.id,
+      ts: Date.now(),
+    };
+    setMessages(prev => [...prev, optimistic]);
+
+    try {
+      await api.social.send(token, {
+        fromHuman: displayName,
+        fromAgent: userHandle,
+        toAgent,
+        content: text,
+        type: 'text',
+      });
+      loadThreads();
+    } catch {
+      // Remove optimistic message on failure
+      setMessages(prev => prev.filter(m => m.id !== optimistic.id));
+    } finally {
       setSending(false);
-    } else {
-      try {
-        const res = await api.chat.send(token, {
-          nodeId,
-          content: text,
-          threadId: activeThreadId ?? undefined,
-          type: msgType,
-        });
-        setActiveThreadId(res.threadId);
-        setHistMessages(prev => [...prev, res.message]);
-      } catch {
-        // silent
-      } finally {
-        setSending(false);
-      }
     }
-  }, [inputText, nodeId, token, connected, wsSend, activeThreadId, msgType]);
+  }, [inputText, activeThread, userHandle, displayName, token, loadThreads]);
 
-  // ── Insert emoji ────────────────────────────────────────────────────────────
-  const handleEmojiSelect = useCallback((emoji: string) => {
-    setInputText(prev => prev + emoji);
-    setShowEmoji(false);
-  }, []);
-
-  // ── Reply to message ────────────────────────────────────────────────────────
-  const handleReply = useCallback((msg: ChatMessage) => {
-    setReplyTo(msg);
-  }, []);
-
-  const displayMessages = activeThreadId ? histMessages : wsMessages.map(m => ({
-    id: m.id,
-    threadId: '',
-    role: m.role,
-    content: m.content,
-    createdAt: m.timestamp,
-    tokens: undefined,
-  }));
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      void handleSend();
+    }
+  }, [handleSend]);
 
   const wsStatus = connecting ? 'connecting' : connected ? 'connected' : 'disconnected';
 
-  // ── Current thread info ─────────────────────────────────────────────────────
-  const currentThread = threads.find(t => t.id === activeThreadId);
-  const threadTitle = currentThread?.title ?? (activeThreadId ? `会话 #${activeThreadId.slice(-6)}` : '实时对话');
-
   return (
-    <div className="chat-app">
-      {/* ── 左侧：会话列表 ── */}
-      <ThreadList
-        threads={threads}
-        activeThreadId={activeThreadId}
-        wsMessages={wsMessages}
-        wsStatus={wsStatus}
-        onSelectThread={setActiveThreadId}
-      />
-
-      {/* ── 右侧：消息区域 ── */}
-      <div className="chat-app-main">
-        {/* 顶部：当前会话标题 */}
-        <div className="chat-app-header">
-          <div className="chat-thread-title">{threadTitle}</div>
-          {nodeId && (
-            <div className="chat-node-info">
-              <span className="chat-node-label">节点：</span>
-              <span className="chat-node-id">{nodeId}</span>
-            </div>
-          )}
+    <div className="chat-panel">
+      {/* ── Left: thread list ── */}
+      <aside className="thread-sidebar">
+        <div className="sidebar-header">
+          <span className="sidebar-title">消息</span>
+          <div className={`ws-status ws-${wsStatus}`} title={`WebSocket: ${wsStatus}`}>
+            <span className="ws-dot" />
+            {wsStatus === 'connected' ? '实时' : wsStatus === 'connecting' ? '…' : '离线'}
+          </div>
         </div>
 
-        {/* 消息列表 */}
-        <div className="chat-messages-area">
-          {loadingThread ? (
-            <div className="chat-loading">加载中…</div>
-          ) : displayMessages.length === 0 ? (
-            <div className="chat-empty">
-              <div className="chat-empty-icon">💬</div>
-              <div>暂无消息{nodeId ? '' : ' — 请先选择节点'}</div>
+        <div className="thread-list">
+          {threads.length === 0 ? (
+            <div style={{ padding: '20px 12px', color: '#8b949e', fontSize: 13, textAlign: 'center' }}>
+              暂无会话<br />
+              <span style={{ fontSize: 12 }}>在联系人页添加好友后开始聊天</span>
             </div>
           ) : (
-            displayMessages.map(msg => (
-              <MessageBubble
-                key={msg.id}
-                msg={msg}
-                onReply={handleReply}
-                replyTo={replyTo?.id === msg.id ? replyTo : undefined}
-              />
-            ))
+            threads.map(t => {
+              const other = otherParticipant(t, userHandle);
+              return (
+                <button
+                  key={t.id}
+                  className={`thread-item ${activeThread?.id === t.id ? 'thread-active' : ''}`}
+                  onClick={() => setActive(t)}
+                >
+                  <div className="thread-title">{other}</div>
+                  <div className="thread-meta">
+                    <span className="thread-count" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 120 }}>
+                      {t.lastMessage}
+                    </span>
+                    <span className="thread-time">{fmtTime(t.lastMessageAt)}</span>
+                  </div>
+                </button>
+              );
+            })
           )}
-          <div ref={messagesEndRef} />
         </div>
+      </aside>
 
-        {/* 回复引用提示 */}
-        {replyTo && (
-          <div className="chat-reply-bar">
-            <span className="chat-reply-label">回复：</span>
-            <span className="chat-reply-content">{replyTo.content.slice(0, 50)}...</span>
-            <button className="chat-reply-cancel" onClick={() => setReplyTo(null)}>✕</button>
+      {/* ── Right: message area ── */}
+      <div className="chat-main">
+        {!activeThread ? (
+          <div className="chat-empty" style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
+            <div className="chat-empty-icon">💬</div>
+            <div>选择一个会话开始聊天</div>
           </div>
-        )}
+        ) : (
+          <>
+            <div className="chat-app-header">
+              <div className="chat-thread-title">{otherParticipant(activeThread, userHandle)}</div>
+              <div className="chat-node-info" style={{ fontSize: 12, color: '#8b949e' }}>
+                {activeThread.messageCount} 条消息
+              </div>
+            </div>
 
-        {/* 输入区域 */}
-        <ChatInput
-          value={inputText}
-          onChange={setInputText}
-          onSend={handleSend}
-          disabled={!nodeId || sending}
-          sending={sending}
-          msgType={msgType}
-          onMsgTypeChange={setMsgType}
-          onEmojiClick={() => setShowEmoji(v => !v)}
-        />
+            <div className="messages-area" style={{ flex: 1, overflowY: 'auto' }}>
+              {loadingMsgs ? (
+                <div className="chat-loading">加载中…</div>
+              ) : messages.length === 0 ? (
+                <div className="chat-empty">
+                  <div className="chat-empty-icon">💬</div>
+                  <div>暂无消息，发送第一条吧</div>
+                </div>
+              ) : (
+                messages.map(msg => {
+                  const isMine = msg.fromAgent === userHandle;
+                  return (
+                    <div
+                      key={msg.id}
+                      className={`msg-row ${isMine ? 'msg-user' : 'msg-assistant'}`}
+                    >
+                      <div className="msg-bubble">
+                        {!isMine && (
+                          <div style={{ fontSize: 11, color: '#8b949e', marginBottom: 2 }}>
+                            {msg.fromAgent}
+                          </div>
+                        )}
+                        <div className="msg-content">{msg.content}</div>
+                        <div className="msg-footer">
+                          <span className="msg-time">{fmtTime(msg.ts)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+              <div ref={bottomRef} />
+            </div>
 
-        {/* 表情选择器 */}
-        {showEmoji && (
-          <EmojiPicker onSelect={handleEmojiSelect} onClose={() => setShowEmoji(false)} />
+            <div className="chat-input-bar">
+              <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+                <textarea
+                  className="chat-input"
+                  value={inputText}
+                  onChange={e => setInputText(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder="输入消息… (Enter 发送, Shift+Enter 换行)"
+                  disabled={sending}
+                  rows={2}
+                />
+                <button
+                  className={`send-btn ${sending ? 'send-loading' : ''}`}
+                  onClick={() => void handleSend()}
+                  disabled={sending || !inputText.trim()}
+                >
+                  {sending ? '…' : '发送'}
+                </button>
+              </div>
+            </div>
+          </>
         )}
       </div>
     </div>

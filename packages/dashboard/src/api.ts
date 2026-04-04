@@ -2,7 +2,7 @@
 
 const BASE =
   typeof window !== 'undefined'
-    ? `${window.location.protocol}//${window.location.hostname}:3100`
+    ? `${window.location.protocol}//${window.location.host}`
     : 'http://localhost:3100';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -126,6 +126,10 @@ export interface UserProfile {
   displayName: string;
   bio: string;
   avatar: string;
+  agentNodeId: string;
+  email?: string;
+  createdAt?: number;
+  updatedAt?: number;
 }
 
 export interface AuthResponse {
@@ -136,6 +140,29 @@ export interface AuthResponse {
 export interface HandleCheckResponse {
   available: boolean;
   reason?: string;
+}
+
+// ── Social types ──────────────────────────────────────────────────────────────
+
+export interface SocialMessage {
+  id: string;
+  fromHuman: string;
+  fromAgent: string;
+  toAgent: string;
+  content: string;
+  type: string;
+  thread?: string;
+  replyTo?: string;
+  ts: number;
+  encrypted?: boolean;
+}
+
+export interface SocialThread {
+  id: string;
+  participants: string[];
+  lastMessage: string;
+  lastMessageAt: number;
+  messageCount: number;
 }
 
 // ── Auth helper ──────────────────────────────────────────────────────────────
@@ -231,6 +258,33 @@ export const api = {
         method: 'PATCH',
         headers: authHeaders(token),
         body: JSON.stringify(body),
+      }),
+  },
+
+  social: {
+    send: (
+      token: string,
+      body: { fromHuman: string; fromAgent: string; toAgent: string; content: string; type?: string },
+    ): Promise<{ status: string; messageId: string; thread: string }> =>
+      req(`${BASE}/api/social/send`, {
+        method: 'POST',
+        headers: authHeaders(token),
+        body: JSON.stringify(body),
+      }),
+
+    threads: (token: string, agentHandle: string): Promise<{ threads: SocialThread[]; count: number }> =>
+      req(`${BASE}/api/social/threads?agentHandle=${encodeURIComponent(agentHandle)}`, {
+        headers: authHeaders(token),
+      }),
+
+    messages: (token: string, agentHandle: string, limit = 50): Promise<{ messages: SocialMessage[]; count: number }> =>
+      req(`${BASE}/api/social/messages?agentHandle=${encodeURIComponent(agentHandle)}&limit=${limit}`, {
+        headers: authHeaders(token),
+      }),
+
+    contacts: (token: string, agentHandle: string): Promise<{ contacts: Array<{ handle: string; profile: unknown }>; count: number }> =>
+      req(`${BASE}/api/social/contacts?agentHandle=${encodeURIComponent(agentHandle)}`, {
+        headers: authHeaders(token),
       }),
   },
 };

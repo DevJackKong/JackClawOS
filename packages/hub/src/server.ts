@@ -176,7 +176,11 @@ export function createServer(): Application {
   // Global rate limiting: 1000 req/min per IP+nodeId
   app.use('/api/', rateLimiter.global)
 
-  // Dashboard — serve static files from public/
+  // Dashboard — serve built React app from dashboard/dist first, then fall back to legacy public/
+  const dashboardDist = path.join(__dirname, '..', '..', 'dashboard', 'dist')
+  if (fs.existsSync(dashboardDist)) {
+    app.use(express.static(dashboardDist))
+  }
   const publicDir = path.join(__dirname, '..', 'public')
   if (fs.existsSync(publicDir)) {
     app.use(express.static(publicDir))
@@ -234,6 +238,19 @@ export function createServer(): Application {
   app.use('/api/moltbook', moltbookRoute)     // Moltbook social integration
   app.use('/api/tasks', tasksRoute)           // async task queue: submit, status, cancel
   app.use('/api/presence', presenceRoute)     // GET /:handle, GET /online — presence queries
+
+  // SPA fallback — serve dashboard index.html for all non-API GET requests
+  app.get('*', (req: Request, res: Response, next: NextFunction) => {
+    if (req.path.startsWith('/api/') || req.path.startsWith('/chat/')) {
+      return next()
+    }
+    const indexPath = path.join(__dirname, '..', '..', 'dashboard', 'dist', 'index.html')
+    if (fs.existsSync(indexPath)) {
+      res.sendFile(indexPath)
+    } else {
+      next()
+    }
+  })
 
   // 404 handler
   app.use((_req: Request, res: Response) => {

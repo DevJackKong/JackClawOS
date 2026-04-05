@@ -17,7 +17,7 @@
  *   })
  */
 
-const DEFAULT_HUB_URL = process.env['JACKCLAW_HUB_URL'] ?? 'http://localhost:3100'
+const DEFAULT_HUB_URL = process.env['JACKCLAW_HUB_URL'] ?? 'https://hub.jackclaw.ai'
 const CEO_TOKEN = process.env['JACKCLAW_CEO_TOKEN'] ?? ''
 
 /** Keywords that indicate the owner is busy or under high pressure */

@@ -14,7 +14,7 @@ process.on('unhandledRejection', (reason) => {
   console.error('[hub] unhandledRejection:', reason)
 })
 
-const PORT = parseInt(process.env.HUB_PORT ?? '3100', 10)
+const PORT = parseInt(process.env.PORT ?? process.env.HUB_PORT ?? '3100', 10)
 
 const app = createServer()
 const httpServer = http.createServer(app)

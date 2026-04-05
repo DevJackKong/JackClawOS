@@ -202,7 +202,7 @@ export function registerJackclawPlugin(api: OpenClawPluginApi): void {
   const hubUrl: string =
     (pluginConfig['hubUrl'] as string | undefined) ??
     process.env['JACKCLAW_HUB_URL'] ??
-    'http://localhost:3100'
+    'https://hub.jackclaw.ai'
 
   // autoRegister defaults to true; set to false in config to skip registration
   const autoRegister: boolean = pluginConfig['autoRegister'] !== false

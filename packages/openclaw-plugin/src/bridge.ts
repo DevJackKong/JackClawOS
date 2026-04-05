@@ -5,7 +5,7 @@
  * so the plugin stays dependency-free (no extra SDK needed).
  */
 
-let activeHubUrl = process.env['JACKCLAW_HUB_URL'] ?? 'http://localhost:3100'
+let activeHubUrl = process.env['JACKCLAW_HUB_URL'] ?? 'https://hub.jackclaw.ai'
 const CEO_TOKEN = process.env['JACKCLAW_CEO_TOKEN'] ?? ''
 
 /** Override the Hub URL at runtime (e.g. from openclaw.yaml plugin config). */

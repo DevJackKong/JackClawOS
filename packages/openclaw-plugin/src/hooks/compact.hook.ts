@@ -40,7 +40,7 @@ interface MemoryEntry {
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
-const DEFAULT_HUB_URL = process.env['JACKCLAW_HUB_URL'] ?? 'http://localhost:3100'
+const DEFAULT_HUB_URL = process.env['JACKCLAW_HUB_URL'] ?? 'https://hub.jackclaw.ai'
 const CEO_TOKEN = process.env['JACKCLAW_CEO_TOKEN'] ?? ''
 
 /** Default memory capacity in bytes (8 MB per node) */

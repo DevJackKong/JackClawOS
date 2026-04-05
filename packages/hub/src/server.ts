@@ -45,6 +45,7 @@ import searchRoute from './routes/search'
 import presenceRoute from './routes/presence'
 import { initFederationManager } from './federation'
 import { JWTPayload } from './types'
+import tunnelRoute from './routes/tunnel'
 
 // ─── Hub Configuration ────────────────────────────────────────────────────────
 
@@ -247,6 +248,7 @@ export function createServer(): Application {
   app.use('/api/tasks', tasksRoute)           // async task queue: submit, status, cancel
   app.use('/api/presence', presenceRoute)     // GET /:handle, GET /online — presence queries
   app.use('/api/plugins', pluginsRoute)       // GET / — list plugins; GET /stats; GET /events
+  app.use('/tunnel', tunnelRoute)             // WS /tunnel/ws; ANY /tunnel/:nodeId/* — reverse proxy
 
   // SPA fallback — serve dashboard index.html for all non-API GET requests
   app.get('*', (req: Request, res: Response, next: NextFunction) => {

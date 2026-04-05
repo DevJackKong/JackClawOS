@@ -1,6 +1,7 @@
 // ContactsPage.tsx — Contacts list with groups, search, and navigation
 
 import React, { useEffect, useState } from 'react';
+import { api } from '../api.js';
 import { ContactCard, type Contact } from './ContactCard.js';
 import { ContactRequests, type ContactRequest } from './ContactRequests.js';
 import { ContactSearch } from './ContactSearch.js';
@@ -55,6 +56,7 @@ type Group = 'recent' | 'all' | 'requests';
 
 interface Props {
   token: string;
+  userHandle?: string;   // @alice — used for api.social.contacts
   onStartChat?: (nodeId: string) => void;
 }
 
@@ -71,9 +73,35 @@ function loadFromStorage<T>(key: string, fallback: T): T {
   }
 }
 
-export const ContactsPage: React.FC<Props> = ({ token: _token, onStartChat }) => {
+export const ContactsPage: React.FC<Props> = ({ token, userHandle, onStartChat }) => {
   const [contacts, setContacts]     = useState<Contact[]>(() => loadFromStorage(LS_CONTACTS, SEED_CONTACTS));
   const [requests, setRequests]     = useState<ContactRequest[]>(() => loadFromStorage(LS_REQUESTS, SEED_REQUESTS));
+
+  // Fetch real contacts from API when userHandle is available
+  useEffect(() => {
+    if (!token || !userHandle) return;
+    const handle = userHandle.replace(/^@/, '');
+    api.social.contacts(token, handle)
+      .then(r => {
+        if (r.contacts.length === 0) return; // keep seed data if empty
+        const mapped: Contact[] = r.contacts.map((c, i) => {
+          const p = c.profile as Record<string, unknown> | null ?? {};
+          return {
+            id: `api-${c.handle}-${i}`,
+            name:       (typeof p['displayName'] === 'string' ? p['displayName'] : null) ?? c.handle,
+            handle:     c.handle,
+            bio:        typeof p['bio'] === 'string' ? p['bio'] : '',
+            skills:     Array.isArray(p['skills']) ? (p['skills'] as unknown[]).filter((s): s is string => typeof s === 'string') : [],
+            trustLevel: (p['trustLevel'] as Contact['trustLevel']) ?? 'unknown',
+            isOnline:   typeof p['isOnline'] === 'boolean' ? p['isOnline'] : false,
+            lastSeen:   typeof p['lastSeen'] === 'number' ? p['lastSeen'] : undefined,
+            nodeId:     typeof p['nodeId'] === 'string' ? p['nodeId'] : undefined,
+          };
+        });
+        setContacts(mapped);
+      })
+      .catch(() => {}); // keep seed data on error
+  }, [token, userHandle]);
   const [group, setGroup]           = useState<Group>('all');
   const [query, setQuery]           = useState('');
   const [selected, setSelected]     = useState<Contact | null>(null);

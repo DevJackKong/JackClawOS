@@ -3,6 +3,7 @@
 import http from 'http'
 import { createServer } from './server'
 import { attachChatWss } from './routes/chat'
+import { attachTunnelWss } from './routes/tunnel'
 
 // ─── Process-level error guards (log but don't crash) ─────────────────────────
 

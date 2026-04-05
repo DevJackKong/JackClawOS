@@ -1,13 +1,14 @@
 /**
  * manager.ts — Unified TunnelManager
  *
- * Wraps CloudflareTunnel and SelfHostedTunnel behind a single interface.
+ * Wraps CloudflareTunnel, SelfHostedTunnel, and WsTunnel behind a single interface.
  */
 
 import { CloudflareTunnel } from './cloudflare.js';
 import { SelfHostedTunnel } from './selfhosted.js';
+import { WsTunnel } from './ws-tunnel.js';
 
-export type TunnelMode = 'cloudflare' | 'selfhosted';
+export type TunnelMode = 'cloudflare' | 'selfhosted' | 'hub';
 
 export interface TunnelManagerOptions {
   /** Restart cloudflared on crash (default: true) */
@@ -16,6 +17,12 @@ export interface TunnelManagerOptions {
   selfHostedHostname?: string;
   /** Fixed HTTPS port for self-hosted mode (0 = random) */
   selfHostedPort?: number;
+  /** Hub WebSocket URL for 'hub' mode, e.g. ws://hub.example.com/tunnel/ws */
+  hubWsUrl?: string;
+  /** Node ID for 'hub' mode */
+  nodeId?: string;
+  /** Auth token for 'hub' mode */
+  token?: string;
   onUrl?: (url: string) => void;
 }
 
@@ -23,6 +30,7 @@ export class TunnelManager {
   private mode: TunnelMode | null = null;
   private cfTunnel: CloudflareTunnel | null = null;
   private shTunnel: SelfHostedTunnel | null = null;
+  private wsTunnel: WsTunnel | null = null;
   private publicUrl: string | null = null;
 
   constructor(private readonly opts: TunnelManagerOptions = {}) {}
@@ -50,7 +58,7 @@ export class TunnelManager {
       const url = await this.cfTunnel.start();
       this.publicUrl = url;
       return url;
-    } else {
+    } else if (mode === 'selfhosted') {
       this.shTunnel = new SelfHostedTunnel({
         targetPort: port,
         httpsPort: this.opts.selfHostedPort ?? 0,
@@ -59,6 +67,27 @@ export class TunnelManager {
       const url = await this.shTunnel.start();
       this.publicUrl = url;
       this.opts.onUrl?.(url);
+      return url;
+    } else {
+      // hub mode — port is the local service port to tunnel
+      if (!this.opts.hubWsUrl) throw new Error('hubWsUrl is required for hub mode');
+      if (!this.opts.nodeId) throw new Error('nodeId is required for hub mode');
+
+      this.wsTunnel = new WsTunnel({
+        hubWsUrl: this.opts.hubWsUrl,
+        nodeId: this.opts.nodeId,
+        localPort: port,
+        token: this.opts.token,
+        onReady: (url) => {
+          this.publicUrl = url;
+          this.opts.onUrl?.(url);
+        },
+        onDisconnect: () => {
+          this.publicUrl = null;
+        },
+      });
+      const url = await this.wsTunnel.start();
+      this.publicUrl = url;
       return url;
     }
   }
@@ -78,6 +107,10 @@ export class TunnelManager {
       await this.shTunnel.stop();
       this.shTunnel = null;
     }
+    if (this.wsTunnel) {
+      this.wsTunnel.stop();
+      this.wsTunnel = null;
+    }
     this.publicUrl = null;
     this.mode = null;
   }
@@ -93,3 +126,4 @@ export class TunnelManager {
 
 /** Singleton for use across the CLI / node packages */
 export const tunnelManager = new TunnelManager();
+

@@ -209,6 +209,7 @@ const Dashboard: React.FC = () => {
             {tab === 'contacts' && (
               <ContactsPage
                 token={hubToken}
+                userHandle={user ? `@${user.handle}` : undefined}
                 onStartChat={nodeId => { setSelectedNode(nodeId); setTab('chat'); }}
               />
             )}

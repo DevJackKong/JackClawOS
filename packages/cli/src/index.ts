@@ -23,13 +23,14 @@ import { registerMoltbook } from './commands/moltbook';
 import { registerTask, registerTaskAsk } from './commands/task.js';
 import { registerModelCommand } from './commands/model.js';
 import { registerQuickCommands } from './commands/quick';
+import { registerHubStatus } from './commands/hub-status';
 
 const program = new Command();
 
 program
   .name('jackclaw')
   .description('JackClaw - Encrypted org-node management CLI')
-  .version('0.1.0');
+  .version('0.2.0');
 
 registerInit(program);
 registerInvite(program);
@@ -59,5 +60,6 @@ registerTask(program);
 registerTaskAsk(program);
 registerModelCommand(program);
 registerQuickCommands(program);
+registerHubStatus(program);
 
 program.parse(process.argv);

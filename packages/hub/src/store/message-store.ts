@@ -381,8 +381,18 @@ export class MessageStore {
     this.backend = backend
   }
 
-  /** Create a MessageStore. Tries sql.js first, falls back to JSONL. */
+  /**
+   * Create a MessageStore.
+   * Respects HUB_STORE env var: 'jsonl' forces JSONL; anything else (default: 'sqlite') tries sql.js.
+   */
   static async create(dbPath = DB_PATH): Promise<MessageStore> {
+    const storeEnv = (process.env.HUB_STORE ?? 'sqlite').toLowerCase()
+
+    if (storeEnv === 'jsonl') {
+      console.log(`[message-store] HUB_STORE=jsonl → JSONL backend: ${FALLBACK_JSONL}`)
+      return new MessageStore(new JsonlMessageStore(FALLBACK_JSONL))
+    }
+
     try {
       const SQL = await initSqlJs()
       let dbInstance: InstanceType<typeof SQL.Database>
@@ -394,7 +404,7 @@ export class MessageStore {
         dbInstance = new SQL.Database()
       }
       const backend = new SqliteMessageStore(dbPath, dbInstance)
-      console.log(`[message-store] sql.js backend: ${dbPath}`)
+      console.log(`[message-store] HUB_STORE=sqlite → sql.js backend: ${dbPath}`)
       return new MessageStore(backend)
     } catch (err) {
       console.warn(
@@ -425,10 +435,13 @@ export class MessageStore {
   }
 }
 
-/** Singleton — starts with JSONL, upgrades to sql.js when ready */
+/**
+ * Singleton — starts with JSONL, then upgrades to the env-selected backend.
+ * HUB_STORE=sqlite (default): upgrades to sql.js when ready.
+ * HUB_STORE=jsonl: stays on JSONL.
+ */
 export let messageStore = MessageStore.createSync()
 
-// Kick off async upgrade to sql.js
 MessageStore.create().then(upgraded => {
   messageStore = upgraded
 }).catch(() => {

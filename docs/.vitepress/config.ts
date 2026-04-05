@@ -22,6 +22,13 @@ export default defineConfig({
             { text: '架构总览', link: '/guide/architecture' },
           ],
         },
+        {
+          text: '进阶',
+          items: [
+            { text: 'ClawChat 使用指南', link: '/guide/clawchat' },
+            { text: '安全指南', link: '/guide/security' },
+          ],
+        },
       ],
       '/api/': [
         {

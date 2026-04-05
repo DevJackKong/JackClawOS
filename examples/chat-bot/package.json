@@ -1,0 +1,10 @@
+{
+  "name": "jackclaw-chat-bot",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@jackclaw/protocol": "file:../../packages/protocol",
+    "tsx": "^4",
+    "ws": "^8"
+  }
+}

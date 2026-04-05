@@ -208,3 +208,190 @@ if (needsHuman) {
 | L3 | 全部，含高风险 | 完全自主（需明确授权）|
 
 高风险操作包括：`delete`、`publish`、`deploy`、`payment`、`transfer`、`release` 等。
+
+---
+
+## 加密 API
+
+`@jackclaw/protocol` 导出一组底层密码学工具，Hub、Node、SDK 均依赖它们完成端到端加密和消息签名。所有密钥均为 PEM 格式字符串。
+
+### generateKeyPair
+
+生成一对 RSA-4096 密钥（公钥用于加密/验签，私钥用于解密/签名）。
+
+```ts
+import { generateKeyPair } from '@jackclaw/protocol'
+
+const { publicKey, privateKey } = await generateKeyPair()
+// publicKey  → '-----BEGIN PUBLIC KEY-----\n...'
+// privateKey → '-----BEGIN PRIVATE KEY-----\n...'
+```
+
+**返回值**
+
+```ts
+interface KeyPair {
+  publicKey:  string  // RSA-4096 公钥 PEM
+  privateKey: string  // RSA-4096 私钥 PEM（请妥善保管，切勿泄露）
+}
+```
+
+> **最佳实践**：每个 Node 在首次启动时调用一次，将公钥上报 Hub，私钥写入本地 `.env` 或系统密钥库，永不传输。
+
+---
+
+### encrypt
+
+用接收方公钥对数据进行非对称加密（RSA-OAEP + AES-256-GCM 混合加密）。
+
+```ts
+import { encrypt } from '@jackclaw/protocol'
+
+const ciphertext = await encrypt(
+  JSON.stringify({ secret: 'Hello Bob' }), // 明文字符串
+  recipientPublicKey                        // 接收方 PEM 公钥
+)
+// → Base64 编码的密文字符串
+```
+
+**签名**
+
+```ts
+function encrypt(plaintext: string, publicKeyPem: string): Promise<string>
+```
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `plaintext` | `string` | 任意明文（通常为 JSON 序列化的对象）|
+| `publicKeyPem` | `string` | 接收方 RSA 公钥 PEM |
+
+返回 Base64 编码的密文，只有持有对应私钥的一方才能解密。
+
+---
+
+### decrypt
+
+用私钥解密 `encrypt` 产生的密文。
+
+```ts
+import { decrypt } from '@jackclaw/protocol'
+
+const plaintext = await decrypt(
+  ciphertext,    // encrypt() 返回的 Base64 密文
+  myPrivateKey   // 接收方 RSA 私钥 PEM
+)
+
+const data = JSON.parse(plaintext)
+console.log(data.secret) // 'Hello Bob'
+```
+
+**签名**
+
+```ts
+function decrypt(ciphertext: string, privateKeyPem: string): Promise<string>
+```
+
+解密失败（密钥不匹配或密文被篡改）时抛出 `Error: JackClaw: decryption failed`。
+
+---
+
+### sign
+
+用私钥对任意字符串进行 RSA-SHA256 签名，返回 Base64 格式签名。
+
+```ts
+import { sign } from '@jackclaw/protocol'
+
+const message = JSON.stringify({ action: 'deploy', version: '1.2.0' })
+const signature = await sign(message, senderPrivateKey)
+// → 'AbCdEf...' (Base64)
+```
+
+**签名**
+
+```ts
+function sign(data: string, privateKeyPem: string): Promise<string>
+```
+
+> `createMessage` 内部已自动调用 `sign`，一般不需手动使用。直接调用适用于需要对任意载荷单独签名的场景（如 Webhook 回调校验）。
+
+---
+
+### verify
+
+验证 `sign` 产生的签名是否与数据和公钥匹配。
+
+```ts
+import { verify } from '@jackclaw/protocol'
+
+const isValid = await verify(
+  message,          // 原始字符串（与 sign 时保持一致）
+  signature,        // Base64 签名
+  senderPublicKey   // 发送方公钥 PEM
+)
+
+if (!isValid) {
+  throw new Error('消息可能已被篡改或来源不可信')
+}
+```
+
+**签名**
+
+```ts
+function verify(
+  data:         string,
+  signature:    string,
+  publicKeyPem: string
+): Promise<boolean>
+```
+
+返回 `true` 表示签名合法，`false` 表示验签失败（不会抛出异常）。
+
+---
+
+### 完整端到端示例
+
+以下示例展示两个 Node 之间从密钥生成到消息收发的完整流程：
+
+```ts
+import {
+  generateKeyPair,
+  createMessage,
+  openMessage,
+  encrypt,
+  decrypt,
+  sign,
+  verify,
+} from '@jackclaw/protocol'
+
+// ─── Alice 初始化 ───────────────────────────────────────────────
+const alice = await generateKeyPair()
+// Bob 初始化
+const bob = await generateKeyPair()
+
+// ─── Alice 向 Bob 发送加密消息 ──────────────────────────────────
+const msg = await createMessage(
+  'alice',
+  'bob',
+  'task.assign',
+  { action: 'analyze', dataset: 'sales-2024' },
+  bob.publicKey,    // 用 Bob 的公钥加密 payload
+  alice.privateKey  // 用 Alice 的私钥签名
+)
+
+// ─── Bob 接收并解密 ─────────────────────────────────────────────
+const payload = await openMessage<{ action: string; dataset: string }>(
+  msg,
+  alice.publicKey, // 用 Alice 的公钥验签
+  bob.privateKey   // 用 Bob 的私钥解密
+)
+
+console.log(payload.action)  // 'analyze'
+console.log(payload.dataset) // 'sales-2024'
+
+// ─── 手动签名验签（适用于 Webhook 等场景）──────────────────────
+const body = JSON.stringify({ event: 'node.ready', nodeId: 'alice' })
+const sig  = await sign(body, alice.privateKey)
+const ok   = await verify(body, sig, alice.publicKey)
+console.log(ok) // true
+```

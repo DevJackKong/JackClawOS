@@ -133,6 +133,9 @@ input, textarea { font-family: inherit; }
 
 /* Thread sidebar */
 .thread-sidebar { width: 220px; flex-shrink: 0; border-right: 1px solid var(--border); display: flex; flex-direction: column; }
+
+/* Online users sidebar (right) */
+.online-sidebar { width: 160px; flex-shrink: 0; border-left: 1px solid var(--border); display: flex; flex-direction: column; }
 .sidebar-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-bottom: 1px solid var(--border); }
 .sidebar-title  { font-size: 12px; font-weight: 600; letter-spacing: .04em; color: var(--muted); text-transform: uppercase; }
 

@@ -1,10 +1,11 @@
 # JackClaw：让 AI 员工像真人一样协作
 
 [![Build](https://github.com/DevJackKong/JackClawOS/actions/workflows/ci.yml/badge.svg)](https://github.com/DevJackKong/JackClawOS/actions)
+[![npm version](https://img.shields.io/npm/v/@jackclaw/cli)](https://www.npmjs.com/package/@jackclaw/cli)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.4-blue?logo=typescript)](https://www.typescriptlang.org)
 [![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](https://nodejs.org)
-[![Unit Tests](https://img.shields.io/badge/unit-108%20passed-success)](packages/)
-[![E2E](https://img.shields.io/badge/e2e-153%20passed-success)](tests/e2e.js)
+[![Tests](https://img.shields.io/badge/tests-286%20passed-success)](packages/)
 
 > **30 seconds to your AI company** 🦞
 
@@ -19,6 +20,22 @@ cd JackClawOS && npm install && npm run build && npx jackclaw demo
 ```
 
 → Hub ready on `:3100` · Node ready on `:19000` · Dashboard at `:3100` · [Quick Start](QUICKSTART.md)
+
+---
+
+## What is JackClaw?
+
+JackClaw is an **open-source multi-agent collaboration framework** that lets you run a fleet of AI agents as if they were employees at a company. Each agent has its own encrypted identity, persistent 4-layer memory, permission level, and communication channel. A central **Hub** orchestrates task routing, enforces human-in-the-loop approval for high-risk actions, and aggregates daily reports from every agent.
+
+Built on TypeScript with end-to-end RSA-4096 + AES-256 encryption, JackClaw is designed to plug into your existing workflow — whether you're running Claude Code, Codex, or Cursor. The entire system starts with a single command: `jackclaw demo`.
+
+**Key design principles:**
+- **You are always in control** — high-risk actions (payments, deploys, deletes) require explicit CEO approval
+- **Privacy by default** — each agent's memory is private; the Hub only sees encrypted ciphertext
+- **Production-grade security** — tamper-proof audit logs, per-agent trust scoring, rate limiting
+- **Zero lock-in** — MIT licensed, self-hosted, works with any LLM provider (16 supported)
+
+---
 
 ### ⚡ What You Get Out of the Box
 
@@ -349,6 +366,55 @@ jackclaw demo
 
 ---
 
+### CLI Reference
+
+Complete list of `jackclaw` commands:
+
+| Command | Description |
+|---------|-------------|
+| `jackclaw demo` | Run a live demo: Hub + 3 AI employees collaborate |
+| `jackclaw start` | Start JackClaw Hub and/or Node services |
+| `jackclaw stop` | Stop the JackClaw daemon |
+| `jackclaw status` | Show node status and Hub connection |
+| `jackclaw init` | Initialize node identity and create config |
+| `jackclaw invite <hub-url>` | Register this node with a Hub |
+| `jackclaw chat` | Open interactive ClawChat session via Hub WebSocket |
+| `jackclaw ask <prompt>` | Send a prompt to any LLM via Hub |
+| `jackclaw task run <prompt>` | Submit a task to a node for LLM execution |
+| `jackclaw task status <id>` | Check the status of a submitted task |
+| `jackclaw send <handle> <msg>` | Send a direct message to @handle |
+| `jackclaw inbox` | View your incoming messages |
+| `jackclaw mention <handle>` | Send a collaboration invitation to another agent |
+| `jackclaw sessions list` | List your active collaboration sessions |
+| `jackclaw sessions respond <id> <decision>` | Accept / decline a session invite |
+| `jackclaw sessions end <id>` | End a collaboration session |
+| `jackclaw identity register <handle>` | Register your @handle on the Hub |
+| `jackclaw identity lookup <handle>` | Look up another agent by @handle |
+| `jackclaw identity who` | Show agents on this Hub |
+| `jackclaw report` | Send a work report to Hub |
+| `jackclaw nodes` | List all nodes (Hub role only) |
+| `jackclaw logs [nodeId]` | View node health and activity via Watchdog |
+| `jackclaw providers` | List available LLM providers across all nodes |
+| `jackclaw model list` | List all available models (local + cloud) |
+| `jackclaw model set <model>` | Set default model (e.g. `openai/gpt-4o`) |
+| `jackclaw model scan` | Scan for locally available models (Ollama + MLX) |
+| `jackclaw model set-key <provider> <key>` | Configure an API key for a cloud provider |
+| `jackclaw schedule <agent> <time>` | Negotiate a meeting time with another agent |
+| `jackclaw remind <args>` | Create or cancel a reminder |
+| `jackclaw reminders` | View your reminder list |
+| `jackclaw secretary status` | Show AI secretary mode and stats |
+| `jackclaw secretary mode <mode>` | Set secretary mode (auto-reply / summary / off) |
+| `jackclaw translate on\|off` | Enable / disable auto-translation of messages |
+| `jackclaw filter status` | Show today's message filter statistics |
+| `jackclaw filter whitelist add <handle>` | Always allow messages from a handle |
+| `jackclaw filter blacklist add <handle>` | Always block messages from a handle |
+| `jackclaw social send <handle> <msg>` | Send a social message through your agent |
+| `jackclaw moltbook connect <api_key>` | Connect a Moltbook social account |
+| `jackclaw config [key] [value]` | View or modify configuration |
+| `jackclaw hub-status` | Show Hub connectivity and online agents |
+
+---
+
 ---
 
 ## Packages / 子包列表
@@ -402,6 +468,92 @@ Side services:
   @jackclaw/payment-vault  — CEO-approval payment workflow
   @jackclaw/watchdog       — heartbeat + health metrics
   @jackclaw/tunnel         — cloudflared public URL (--tunnel flag)
+```
+
+---
+
+---
+
+## Contributing
+
+We welcome contributions of all sizes — bug fixes, new features, documentation, and tests.
+
+### Development Setup
+
+```bash
+git clone https://github.com/DevJackKong/JackClawOS.git
+cd JackClawOS
+npm install          # install all workspace dependencies
+npm run build        # compile all packages (TypeScript → JS)
+npm test             # run unit tests (286 tests across 14 packages)
+```
+
+Start the dev environment:
+
+```bash
+# Terminal 1 — Hub
+node packages/hub/dist/index.js
+
+# Terminal 2 — a sample Node
+node packages/node/dist/index.js --name dev-node --hub http://localhost:3100
+```
+
+### Code Standards
+
+- **Language**: TypeScript (strict mode, no `any` without justification)
+- **Style**: 2-space indent, single quotes, semicolons — enforced by the existing `tsconfig.json`
+- **Tests**: add unit tests for all new public APIs; E2E tests for CLI commands
+- **Security**: never log plaintext message content; all inter-node payloads must be encrypted via `@jackclaw/protocol`
+- **Commits**: use [Conventional Commits](https://www.conventionalcommits.org/) — `feat:`, `fix:`, `docs:`, `chore:`
+
+### PR Process
+
+1. Fork the repo and create a branch from `main`: `git checkout -b feat/my-feature`
+2. Make your changes with tests
+3. Run `npm run build && npm test` — all 286 tests must pass
+4. Open a pull request against `main` with a clear description of what and why
+5. A maintainer will review within 48 hours
+
+---
+
+## Roadmap
+
+### v0.3.0 — Persistent Storage & Federation
+- [ ] PostgreSQL storage backend for Hub (replacing in-memory state)
+- [ ] Cross-Hub federation — agents on different Hubs can message each other
+- [ ] Federated trust graph — reputation scores sync across Hubs
+- [ ] `jackclaw cluster` command for multi-Hub management
+
+### v0.4.0 — Plugin Market & Cloud Memory
+- [ ] Plugin marketplace — publish and install community Node plugins
+- [ ] Agent Memory cloud sync — opt-in L4 memory hosted on JackClaw Cloud
+- [ ] Visual workflow builder (drag-and-drop task routing in Dashboard)
+- [ ] Webhook triggers — external events can dispatch tasks to agents
+
+### v1.0.0 — Production Ready
+- [ ] Full SLA guarantees and stability commitments
+- [ ] Kubernetes Helm chart for enterprise deployment
+- [ ] SOC 2 Type II audit trail support
+- [ ] Official LTS (Long-Term Support) release cadence
+
+---
+
+## License
+
+JackClaw is released under the [MIT License](LICENSE).
+
+```
+MIT License — Copyright (c) 2024 Jack Kong
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
 ```
 
 ---

@@ -1,0 +1,9 @@
+{
+  "name": "jackclaw-hello",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@jackclaw/protocol": "file:../../packages/protocol",
+    "tsx": "^4"
+  }
+}

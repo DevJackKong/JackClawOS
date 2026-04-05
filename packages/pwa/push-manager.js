@@ -10,6 +10,8 @@
     // VAPID 公钥（由服务端配置，主线程启动时通过 init() 传入）
     _vapidKey: '',
     _swReg: null,
+    // 稳定的设备 ID，用于 nodeId 上报给 Hub
+    _nodeId: '',
 
     /**
      * 初始化：传入 VAPID 公钥，并等待 SW 就绪
@@ -22,7 +24,41 @@
       }
       this._vapidKey = vapidPublicKey || ''
       this._swReg    = await navigator.serviceWorker.ready
+      this._nodeId   = this._getOrCreateNodeId()
       return true
+    },
+
+    /**
+     * 从 Hub 获取 VAPID 公钥并初始化（推荐在有 Hub URL 时使用）
+     * @param {string} hubUrl   JackClaw Hub URL
+     * @param {string} token    JWT 令牌（可选）
+     */
+    async initFromHub(hubUrl, token) {
+      try {
+        const headers = token ? { 'Authorization': 'Bearer ' + token } : {}
+        const res = await fetch(hubUrl + '/api/push/vapid-key', { headers })
+        if (!res.ok) throw new Error('HTTP ' + res.status)
+        const { publicKey } = await res.json()
+        if (publicKey) {
+          localStorage.setItem('jackclaw_vapid_key', publicKey)
+        }
+        return await this.init(publicKey || '')
+      } catch (err) {
+        console.warn('[PushManager] initFromHub failed, falling back to cached key:', err)
+        const cached = localStorage.getItem('jackclaw_vapid_key') || ''
+        return await this.init(cached)
+      }
+    },
+
+    /** 获取或生成稳定的设备 ID（存于 localStorage） */
+    _getOrCreateNodeId() {
+      const KEY = 'jackclaw_pwa_node_id'
+      let id = localStorage.getItem(KEY)
+      if (!id) {
+        id = 'pwa-' + Math.random().toString(36).slice(2, 10) + '-' + Date.now().toString(36)
+        localStorage.setItem(KEY, id)
+      }
+      return id
     },
 
     /**
@@ -190,7 +226,7 @@
         const res = await fetch(hubUrl + '/api/push/subscribe', {
           method:  'POST',
           headers,
-          body:    JSON.stringify({ subscription }),
+          body:    JSON.stringify({ nodeId: this._nodeId, subscription }),
         })
         if (res.ok) {
           console.log('[PushManager] Subscription reported to server')

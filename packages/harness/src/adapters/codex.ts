@@ -43,7 +43,8 @@ export class CodexAdapter implements HarnessAdapter {
       pid: proc.pid,
 
       async wait(): Promise<HarnessOutput> {
-        return new Promise((resolve) => {
+        return new Promise((resolve, reject) => {
+          proc.on('error', (err) => reject(new Error(`Process spawn error: ${err.message}`)))
           proc.on('close', (code) => {
             resolve({
               sessionId,
@@ -60,5 +61,14 @@ export class CodexAdapter implements HarnessAdapter {
 
       onOutput(cb) { outputCallbacks.push(cb) },
     }
+  }
+}
+
+export function toReport(output: HarnessOutput): { summary: string, period: string, visibility: string, data: Record<string, unknown> } {
+  return {
+    summary: output.stdout.slice(0, 500),
+    period: "on-demand",
+    visibility: "ceo",
+    data: { exitCode: output.exitCode, duration: output.durationMs, model: (output as unknown as Record<string, unknown>).model }
   }
 }

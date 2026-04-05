@@ -563,9 +563,15 @@ if ('serviceWorker' in navigator) {
         })
       })
 
-      // 初始化推送管理器（VAPID key 由 localStorage 提供）
-      const vapidKey = localStorage.getItem('jackclaw_vapid_key') || ''
-      await JackClawPush.init(vapidKey)
+      // 初始化推送管理器 — 优先从 Hub 获取 VAPID key（含 token 可选）
+      const _hubUrl = localStorage.getItem(LS_URL) || ''
+      const _tok    = localStorage.getItem(LS_TOKEN) || ''
+      if (_hubUrl) {
+        JackClawPush.initFromHub(_hubUrl, _tok)
+      } else {
+        const vapidKey = localStorage.getItem('jackclaw_vapid_key') || ''
+        JackClawPush.init(vapidKey)
+      }
 
       // 查询 outbox 未发送数量，显示角标
       reg.active?.postMessage({ type: 'GET_OUTBOX_COUNT' })
@@ -649,9 +655,8 @@ const VAPID_PUBLIC_KEY = localStorage.getItem('jackclaw_vapid_key') || ''
 async function subscribePush() {
   const { url, token } = getConfig()
   if (!url) return
-  // 使用 push-manager.js 的封装
-  const vapidKey = localStorage.getItem('jackclaw_vapid_key') || ''
-  await JackClawPush.init(vapidKey)
+  // 从 Hub 获取最新 VAPID key 并初始化（若已初始化则复用）
+  await JackClawPush.initFromHub(url, token)
   const sub = await JackClawPush.subscribe(url, token)
   if (sub) console.log('[PWA] Push subscribed!')
 }

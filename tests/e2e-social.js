@@ -502,10 +502,50 @@ async function testGroupChannel() {
 // ─── File Upload/Download ─────────────────────────────────────────────────────
 
 async function testFiles() {
-  console.log('\n🔷 Files: Upload + Download (SKIPPED — route not yet implemented)')
-  // File upload/download routes (/api/files/*) not yet implemented
-  // Skip all assertions
-  return null
+  console.log('\n🔷 Files: Upload + Download')
+
+  // 1. Upload a text file via multipart/form-data
+  const fileContent = 'Hello from e2e test! 你好世界'
+  const { body: mpBody, contentType } = buildMultipart('test.txt', fileContent, 'text/plain')
+  const r1 = await rawReq('POST', '/api/files/upload', mpBody, {
+    'Content-Type': contentType,
+    'Authorization': `Bearer ${aliceToken}`,
+  })
+  ok('Upload file → 201', r1.s === 201)
+  ok('Response has fileId', typeof r1.b?.fileId === 'string' && r1.b.fileId.length > 0)
+  ok('Response has filename', r1.b?.filename === 'test.txt')
+  ok('Response has size > 0', (r1.b?.size ?? 0) > 0)
+  ok('Response has mimeType', r1.b?.mimeType === 'text/plain')
+
+  const fileId = r1.b?.fileId
+
+  // 2. List files — should contain the uploaded file
+  const r2 = await rawReq('GET', '/api/files/list', null, {
+    'Authorization': `Bearer ${aliceToken}`,
+  })
+  ok('List files → 200', r2.s === 200)
+  ok('Files array present', Array.isArray(r2.b?.files))
+  ok('At least 1 file in list', (r2.b?.files?.length ?? 0) >= 1)
+  ok('totalSize >= uploaded size', (r2.b?.totalSize ?? 0) > 0)
+
+  // 3. Download the uploaded file
+  if (fileId) {
+    const r3 = await rawReq('GET', `/api/files/${fileId}`, null, {
+      'Authorization': `Bearer ${aliceToken}`,
+    })
+    ok('Download file → 200', r3.s === 200)
+    const body = Buffer.isBuffer(r3.b) ? r3.b.toString('utf8') : String(r3.b)
+    ok('Downloaded content matches', body === fileContent)
+  } else {
+    ok('Download file → skipped (no fileId)', false)
+    ok('Content matches → skipped', false)
+  }
+
+  // 4. Non-existent file → 404
+  const r4 = await rawReq('GET', '/api/files/00000000-0000-0000-0000-000000000000', null, {
+    'Authorization': `Bearer ${aliceToken}`,
+  })
+  ok('Non-existent file → 404', r4.s === 404)
 }
 
 // ─── WebSocket Stats ──────────────────────────────────────────────────────────

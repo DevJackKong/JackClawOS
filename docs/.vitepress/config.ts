@@ -28,6 +28,8 @@ export default defineConfig({
           text: 'API 参考',
           items: [
             { text: '协议规范', link: '/api/protocol' },
+            { text: 'Hub REST API', link: '/api/hub' },
+            { text: 'CLI 命令', link: '/api/cli' },
           ],
         },
       ],

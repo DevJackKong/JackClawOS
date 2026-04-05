@@ -1,4 +1,4 @@
-// ChatApp — Social messaging: thread list (left) + message area (right)
+// ChatApp — Social messaging: thread list (left) + message area (center) + online users (right)
 // Connects to hub via JWT-authenticated WebSocket for real-time delivery.
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -33,16 +33,33 @@ export const ChatApp: React.FC<Props> = ({ token, userHandle, displayName }) => 
   const [sending, setSending]           = useState(false);
   const [loadingMsgs, setLoadingMsgs]   = useState(false);
 
-  // New conversation feature
+  // New conversation modal
   const [showNewChat, setShowNewChat]   = useState(false);
+  const [pendingTarget, setPendingTarget] = useState<string | null>(null); // @handle
+
+  // Online users sidebar
   const [onlineUsers, setOnlineUsers]   = useState<OnlineUser[]>([]);
   const [loadingOnline, setLoadingOnline] = useState(false);
-  const [pendingTarget, setPendingTarget] = useState<string | null>(null); // @handle
 
   const bottomRef = useRef<HTMLDivElement>(null);
 
   // JWT-authenticated WebSocket — receives social messages in real-time
   const { socialMessages, connected, connecting } = useWebSocket(null, token);
+
+  // ── Load online users (sidebar) ─────────────────────────────────────────────
+  const loadOnline = useCallback(() => {
+    setLoadingOnline(true);
+    api.presence.online(token)
+      .then(r => setOnlineUsers(r.users.filter(u => u.handle !== userHandle)))
+      .catch(() => setOnlineUsers([]))
+      .finally(() => setLoadingOnline(false));
+  }, [token, userHandle]);
+
+  useEffect(() => {
+    loadOnline();
+    const iv = setInterval(loadOnline, 30_000);
+    return () => clearInterval(iv);
+  }, [loadOnline]);
 
   // ── Load threads ────────────────────────────────────────────────────────────
   const loadThreads = useCallback(() => {
@@ -54,7 +71,7 @@ export const ChatApp: React.FC<Props> = ({ token, userHandle, displayName }) => 
 
   useEffect(() => { loadThreads(); }, [loadThreads]);
 
-  // ── Load messages for active thread (full history — both sent + received) ──
+  // ── Load messages for active thread ─────────────────────────────────────────
   useEffect(() => {
     if (!activeThread) { setMessages([]); return; }
     setLoadingMsgs(true);
@@ -79,7 +96,7 @@ export const ChatApp: React.FC<Props> = ({ token, userHandle, displayName }) => 
     loadThreads();
   }, [socialMessages, activeThread, loadThreads]);
 
-  // ── Auto-scroll ─────────────────────────────────────────────────────────────
+  // ── Auto-scroll to bottom ───────────────────────────────────────────────────
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
@@ -93,31 +110,27 @@ export const ChatApp: React.FC<Props> = ({ token, userHandle, displayName }) => 
     return () => { clearTimeout(t); document.title = orig; };
   }, [socialMessages.length]);
 
-  // ── Open "new conversation" modal ────────────────────────────────────────────
-  const openNewChat = useCallback(() => {
-    setShowNewChat(true);
-    setLoadingOnline(true);
-    api.presence.online(token)
-      .then(r => {
-        const others = r.users.filter(u => u.handle !== userHandle);
-        setOnlineUsers(others);
-      })
-      .catch(() => setOnlineUsers([]))
-      .finally(() => setLoadingOnline(false));
-  }, [token, userHandle]);
-
-  const selectTarget = useCallback((handle: string) => {
+  // ── Start chat with a user (from sidebar or modal) ──────────────────────────
+  const startChatWith = useCallback((handle: string) => {
     setShowNewChat(false);
-    // Check if we already have a thread with this user
-    const existing = threads.find(t => t.participants.includes(handle) && t.participants.includes(userHandle));
+    const existing = threads.find(
+      t => t.participants.includes(handle) && t.participants.includes(userHandle),
+    );
     if (existing) {
       setActive(existing);
+      setPendingTarget(null);
     } else {
       setPendingTarget(handle);
       setActive(null);
       setMessages([]);
     }
   }, [threads, userHandle]);
+
+  // ── Open new conversation modal ─────────────────────────────────────────────
+  const openNewChat = useCallback(() => {
+    setShowNewChat(true);
+    loadOnline();
+  }, [loadOnline]);
 
   // ── Send message ─────────────────────────────────────────────────────────────
   const handleSend = useCallback(async () => {
@@ -149,10 +162,8 @@ export const ChatApp: React.FC<Props> = ({ token, userHandle, displayName }) => 
         type: 'text',
       });
 
-      // If this was a pending (new) conversation, navigate to the created thread
       if (pendingTarget) {
         setPendingTarget(null);
-        // Reload threads then activate the new one
         api.social.threads(token, userHandle).then(r => {
           setThreads(r.threads);
           const newThread = r.threads.find(t => t.id === res.thread);
@@ -162,7 +173,6 @@ export const ChatApp: React.FC<Props> = ({ token, userHandle, displayName }) => 
         loadThreads();
       }
     } catch {
-      // Remove optimistic message on failure
       setMessages(prev => prev.filter(m => m.id !== optimistic.id));
     } finally {
       setSending(false);
@@ -203,7 +213,6 @@ export const ChatApp: React.FC<Props> = ({ token, userHandle, displayName }) => 
         </div>
 
         <div className="thread-list">
-          {/* Pending conversation (not yet thread-backed) */}
           {pendingTarget && (
             <button
               className="thread-item thread-active"
@@ -245,7 +254,7 @@ export const ChatApp: React.FC<Props> = ({ token, userHandle, displayName }) => 
         </div>
       </aside>
 
-      {/* ── Right: message area ── */}
+      {/* ── Center: message area ── */}
       <div className="chat-main">
         {!chatTitle ? (
           <div className="chat-empty" style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
@@ -319,6 +328,66 @@ export const ChatApp: React.FC<Props> = ({ token, userHandle, displayName }) => 
         )}
       </div>
 
+      {/* ── Right: online users sidebar ── */}
+      <aside className="online-sidebar">
+        <div className="sidebar-header">
+          <span className="sidebar-title">在线</span>
+          {!loadingOnline && (
+            <span style={{ fontSize: 11, color: '#22c55e', padding: '2px 7px', border: '1px solid #22c55e44', borderRadius: 20 }}>
+              {onlineUsers.length}
+            </span>
+          )}
+        </div>
+        <div style={{ flex: 1, overflowY: 'auto' }}>
+          {loadingOnline && onlineUsers.length === 0 ? (
+            <div style={{ padding: '16px 12px', color: '#8b949e', fontSize: 12, textAlign: 'center' }}>加载中…</div>
+          ) : onlineUsers.length === 0 ? (
+            <div style={{ padding: '16px 12px', color: '#8b949e', fontSize: 12, textAlign: 'center' }}>暂无在线用户</div>
+          ) : (
+            onlineUsers.map(u => (
+              <button
+                key={u.handle}
+                onClick={() => startChatWith(u.handle)}
+                title={`与 ${u.displayName} 开始对话`}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  width: '100%', padding: '8px 10px',
+                  background: 'none', border: 'none',
+                  borderBottom: '1px solid #21262d',
+                  cursor: 'pointer', color: '#e6edf3', textAlign: 'left',
+                }}
+                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = '#21262d'; }}
+                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'none'; }}
+              >
+                <div style={{ position: 'relative', flexShrink: 0 }}>
+                  <div style={{
+                    width: 28, height: 28, borderRadius: '50%',
+                    background: '#f97316', color: '#fff',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 11, fontWeight: 700,
+                  }}>
+                    {(u.displayName || u.handle)[0]?.toUpperCase() ?? '?'}
+                  </div>
+                  <div style={{
+                    position: 'absolute', bottom: 0, right: 0,
+                    width: 8, height: 8, borderRadius: '50%',
+                    background: '#22c55e', border: '1.5px solid #161b22',
+                  }} />
+                </div>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 12, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {u.displayName}
+                  </div>
+                  <div style={{ fontSize: 10, color: '#8b949e', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {u.handle}
+                  </div>
+                </div>
+              </button>
+            ))
+          )}
+        </div>
+      </aside>
+
       {/* ── New conversation modal ── */}
       {showNewChat && (
         <div
@@ -352,7 +421,7 @@ export const ChatApp: React.FC<Props> = ({ token, userHandle, displayName }) => 
                 onlineUsers.map(u => (
                   <button
                     key={u.handle}
-                    onClick={() => selectTarget(u.handle)}
+                    onClick={() => startChatWith(u.handle)}
                     style={{
                       display: 'flex', alignItems: 'center', gap: 10,
                       width: '100%', padding: '10px 16px', background: 'none',

@@ -50,8 +50,8 @@
     "url": "https://github.com/DevJackKong/JackClawOS/issues"
   },
   "files": [
-    "dist",
+    "dist/",
     "README.md",
-    "LICENSE"
+    "package.json"
   ]
 }

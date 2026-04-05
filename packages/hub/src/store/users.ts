@@ -182,7 +182,7 @@ export class UserStore {
 
   validateToken(token: string): PublicUser | null {
     try {
-      const payload = jwt.verify(token, JWT_SECRET) as { handle?: string; role?: string }
+      const payload = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] }) as { handle?: string; role?: string }
       if (payload.role !== 'user' || !payload.handle) return null
       return this.getUser(payload.handle)
     } catch {

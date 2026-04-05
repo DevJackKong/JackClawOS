@@ -20,9 +20,9 @@
     "node": ">=20.0.0"
   },
   "files": [
-    "dist",
+    "dist/",
     "README.md",
-    "LICENSE"
+    "package.json"
   ],
   "license": "MIT",
   "keywords": [
@@ -35,5 +35,8 @@
     "type": "git",
     "url": "https://github.com/DevJackKong/JackClawOS.git"
   },
-  "homepage": "https://github.com/DevJackKong/JackClawOS#readme"
+  "homepage": "https://github.com/DevJackKong/JackClawOS#readme",
+  "publishConfig": {
+    "access": "public"
+  }
 }

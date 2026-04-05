@@ -36,8 +36,9 @@
   },
   "license": "MIT",
   "files": [
-    "dist",
-    "README.md"
+    "dist/",
+    "README.md",
+    "package.json"
   ],
   "engines": {
     "node": ">=20.0.0"

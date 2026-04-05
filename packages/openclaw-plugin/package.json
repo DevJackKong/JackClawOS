@@ -50,8 +50,8 @@
   },
   "types": "dist/index.d.ts",
   "files": [
-    "dist",
+    "dist/",
     "README.md",
-    "LICENSE"
+    "package.json"
   ]
 }

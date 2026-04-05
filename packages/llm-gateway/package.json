@@ -28,8 +28,9 @@
   },
   "license": "MIT",
   "files": [
-    "dist",
-    "README.md"
+    "dist/",
+    "README.md",
+    "package.json"
   ],
   "keywords": [
     "llm",

@@ -17,11 +17,17 @@ const TAG  = process.argv.find(a => a.startsWith('--tag='))?.split('=')[1] ?? 'l
 const PUBLISHABLE = [
   'protocol',
   'memory',
+  'node',
   'llm-gateway',
   'jackclaw-sdk',
-  'node',
+  'harness',
   'hub',
+  'tunnel',
+  'watchdog',
+  'payment-vault',
+  'openclaw-plugin',
   'cli',
+  'create-jackclaw',
 ]
 
 function run(cmd, cwd) {

@@ -140,7 +140,7 @@ function jwtAuthMiddleware(req: Request, res: Response, next: NextFunction): voi
 
   for (const secret of secrets) {
     try {
-      const payload = jwt.verify(token, secret) as JWTPayload
+      const payload = jwt.verify(token, secret, { algorithms: ['HS256'] }) as JWTPayload
       req.jwtPayload = payload
       next()
       return
@@ -199,11 +199,13 @@ export function createServer(): Application {
   // Public: node registration (no JWT required — nodes need a token first)
   app.use('/api/register', registerRoute)
 
-  // Public: user auth — strict rate limit on login to prevent brute-force
+  // Public: user auth — strict rate limits to prevent brute-force and account flooding
   app.post('/api/auth/login', rateLimiter.login)
+  app.post('/api/auth/register', rateLimiter.register)
   app.use('/api/auth', authRoute)
 
-  // Public: ClawChat (nodes authenticate via WebSocket nodeId)
+  // Public: ClawChat (nodes authenticate via WebSocket nodeId); message send is rate-limited
+  app.post('/api/chat/send', rateLimiter.message)
   app.use('/api/chat', chatRouter)
 
   // Public: Human accounts — humanToken auth (no JWT needed)

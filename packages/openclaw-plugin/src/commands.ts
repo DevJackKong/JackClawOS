@@ -143,12 +143,43 @@ async function handleProfile(rawArgs: string): Promise<CommandReply> {
   }
 }
 
+/**
+ * Persists across invocations within the same plugin session.
+ * Set via `/chat to @handle`; used when input has no known subcommand.
+ */
+let lastChatTarget = ""
+
 /** /chat <subcommand> [args] */
 async function chatCommandHandler(ctx: PluginCommandContext): Promise<CommandReply> {
   const raw = (ctx.args ?? '').trim()
-  const [sub, ...rest] = raw.split(/\s+/)
+  const tokens = raw.split(/\s+/)
+  const first = tokens[0] ?? ''
+
+  // @syntax: /chat @alice 你好 → /chat send @alice 你好
+  if (first.startsWith('@')) {
+    const toHandle = first.slice(1)
+    const content = tokens.slice(1).join(' ')
+    if (!content) return replyText('请提供消息内容。\n用法：/chat @handle 消息内容')
+    const fromNodeId = process.env['JACKCLAW_NODE_ID'] ?? 'openclaw-user'
+    try {
+      const result = await sendChatMessage(fromNodeId, toHandle, content)
+      return replyText(`✅ 消息已发送给 @${toHandle}\n消息 ID：${result.messageId}`)
+    } catch (err) {
+      return replyText(`❌ 发送失败：${(err as Error).message}`)
+    }
+  }
+
+  const [sub, ...rest] = tokens
 
   switch ((sub ?? '').toLowerCase()) {
+    case 'to': {
+      const handleArg = rest[0] ?? ''
+      if (!handleArg.startsWith('@')) {
+        return replyText('用法：/chat to @handle\n示例：/chat to @bob')
+      }
+      lastChatTarget = handleArg.slice(1)
+      return replyText(`✅ 默认聊天对象已设为 @${lastChatTarget}\n后续直接 /chat 消息 即可发送给 TA。`)
+    }
     case 'list': {
       try {
         const users = await fetchOnlineUsers()
@@ -172,13 +203,19 @@ async function chatCommandHandler(ctx: PluginCommandContext): Promise<CommandRep
     }
 
     case 'send': {
-      // /chat send @handle message...
+      // /chat send @handle message...  OR  /chat send message (uses lastChatTarget)
       const handleMatch = rest[0]?.match(/^@(.+)/)
-      if (!handleMatch?.[1]) {
+      let toNodeId: string
+      let content: string
+      if (handleMatch?.[1]) {
+        toNodeId = handleMatch[1]
+        content = rest.slice(1).join(' ')
+      } else if (lastChatTarget) {
+        toNodeId = lastChatTarget
+        content = rest.join(' ')
+      } else {
         return replyText('用法：/chat send @handle 消息内容\n示例：/chat send @alice 你好！')
       }
-      const toNodeId = handleMatch[1]
-      const content = rest.slice(1).join(' ')
       if (!content) {
         return replyText('请提供消息内容。\n用法：/chat send @handle 消息内容')
       }
@@ -297,22 +334,35 @@ async function chatCommandHandler(ctx: PluginCommandContext): Promise<CommandRep
     case undefined:
       return replyText(
         '**ClawChat 指令**\n\n' +
-        '/chat list                — 查看当前在线用户\n' +
-        '/chat search <关键词>     — 搜索用户（支持 handle 和显示名）\n' +
-        '/chat send @handle 消息   — 发送消息给指定节点\n' +
-        '/chat inbox               — 查看未读消息\n' +
-        '/chat threads             — 查看会话列表\n' +
+        '/chat @handle 消息          — 直接发送消息（快捷方式）\n' +
+        '/chat to @handle            — 设置默认聊天对象，之后直接 /chat 消息 即可\n' +
+        '/chat list                  — 查看当前在线用户\n' +
+        '/chat search <关键词>       — 搜索用户（支持 handle 和显示名）\n' +
+        '/chat send @handle 消息     — 发送消息给指定节点\n' +
+        '/chat inbox                 — 查看未读消息\n' +
+        '/chat threads               — 查看会话列表\n' +
         '/chat reply <threadId> 消息 — 回复某个会话\n' +
         '/chat group create/list/send — 群组功能\n' +
-        '/chat help                — 显示此帮助',
+        '/chat help                  — 显示此帮助',
       )
 
-    default:
+    default: {
+      // Plain text with no known subcommand → send to lastChatTarget
+      if (raw && lastChatTarget) {
+        const fromNodeId = process.env['JACKCLAW_NODE_ID'] ?? 'openclaw-user'
+        try {
+          const result = await sendChatMessage(fromNodeId, lastChatTarget, raw)
+          return replyText(`✅ 消息已发送给 @${lastChatTarget}\n消息 ID：${result.messageId}`)
+        } catch (err) {
+          return replyText(`❌ 发送失败：${(err as Error).message}`)
+        }
+      }
       return replyText(
         `未知子命令 "${sub}"。\n` +
-        '可用：list | search | send | inbox | threads | reply | group | help\n' +
-        '输入 /chat help 查看帮助。',
+        '可用：list | search | send | inbox | threads | reply | group | to | help\n' +
+        '发送快捷方式：/chat @handle 消息  或先 /chat to @handle 设定默认对象',
       )
+    }
   }
 }
 

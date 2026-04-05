@@ -24,6 +24,7 @@ import { registerTask, registerTaskAsk } from './commands/task.js';
 import { registerModelCommand } from './commands/model.js';
 import { registerQuickCommands } from './commands/quick';
 import { registerHubStatus } from './commands/hub-status';
+import { registerTeam } from './commands/team';
 
 const program = new Command();
 
@@ -61,5 +62,6 @@ registerTaskAsk(program);
 registerModelCommand(program);
 registerQuickCommands(program);
 registerHubStatus(program);
+registerTeam(program);
 
 program.parse(process.argv);

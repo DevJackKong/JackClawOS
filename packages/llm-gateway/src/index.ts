@@ -54,6 +54,7 @@ export { KimiProvider }     from './providers/kimi.js'
 export { ZhipuProvider }    from './providers/zhipu.js'
 export { BaichuanProvider } from './providers/baichuan.js'
 export { OllamaProvider }   from './providers/ollama.js'
+export { OpenClawProvider, probeHealth } from './providers/openclaw.js'
 
 // ─── Router, Config & Cost ───────────────────────────────────────────
 
@@ -101,6 +102,12 @@ export interface QuickConfig {
   baichuan?:    { apiKey: string; baseUrl?: string }
   /** 自定义 OpenAI-compatible 端点 */
   custom?:      { name: string; apiKey?: string; baseUrl: string; defaultModel?: string }
+  /**
+   * OpenClaw Gateway（本地聚合网关，默认 http://localhost:5337）
+   * 设为 true 则使用默认配置；设为对象可自定义 baseUrl / apiKey。
+   * 未配置时 createGateway 会自动探测本地是否运行 OpenClaw。
+   */
+  openclaw?:    true | { baseUrl?: string; apiKey?: string; defaultModel?: string }
   /** 默认 provider */
   defaultProvider?: string
   /** 故障转移链 */
@@ -109,6 +116,7 @@ export interface QuickConfig {
 
 import { LLMGateway } from './gateway.js'
 import type { GatewayConfig, ProviderConfig } from './types.js'
+import { probeHealth } from './providers/openclaw.js'
 
 export function createGateway(config: QuickConfig): LLMGateway {
   const providers: ProviderConfig[] = []
@@ -266,6 +274,16 @@ export function createGateway(config: QuickConfig): LLMGateway {
     })
   }
 
+  if (config.openclaw) {
+    const oc = config.openclaw === true ? {} : config.openclaw
+    providers.push({
+      provider: 'openclaw',
+      apiKey: oc.apiKey,
+      baseUrl: oc.baseUrl ?? 'http://localhost:5337',
+      defaultModel: oc.defaultModel ?? 'gpt-4o',
+    })
+  }
+
   if (!providers.length) {
     throw new Error('[createGateway] No providers configured. Pass at least one API key.')
   }
@@ -277,4 +295,35 @@ export function createGateway(config: QuickConfig): LLMGateway {
   }
 
   return new LLMGateway(gwConfig)
+}
+
+/**
+ * Async variant of createGateway with OpenClaw auto-detection.
+ *
+ * If `config.openclaw` is not set, probes `http://localhost:5337/health`.
+ * When OpenClaw Gateway is detected, it is automatically added as a provider
+ * and prepended to the fallback chain so JackClaw nodes can use it immediately.
+ *
+ * @example
+ * const gw = await createGatewayAsync({
+ *   anthropic: { apiKey: process.env.ANTHROPIC_API_KEY! },
+ *   // openclaw auto-detected if running on :5337
+ * })
+ */
+export async function createGatewayAsync(config: QuickConfig): Promise<LLMGateway> {
+  let resolved = config
+
+  if (!config.openclaw) {
+    const running = await probeHealth('http://localhost:5337')
+    if (running) {
+      resolved = {
+        ...config,
+        openclaw: true,
+        // Prepend openclaw to the fallback chain for zero-config priority
+        fallbackChain: ['openclaw', ...(config.fallbackChain ?? [])],
+      }
+    }
+  }
+
+  return createGateway(resolved)
 }

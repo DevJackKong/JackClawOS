@@ -11,6 +11,12 @@ import path from 'path'
 import initSqlJs from 'sql.js'
 
 const HUB_DIR = path.join(os.homedir(), '.jackclaw', 'hub')
+
+const verbose = process.env.DEBUG || process.env.VERBOSE
+function dbg(...args: unknown[]): void {
+  if (verbose) console.log(...args)
+  else console.debug(...args)
+}
 export const DB_PATH = path.join(HUB_DIR, 'messages.db')
 const FALLBACK_JSONL = path.join(HUB_DIR, 'messages.jsonl')
 
@@ -389,7 +395,7 @@ export class MessageStore {
     const storeEnv = (process.env.HUB_STORE ?? 'sqlite').toLowerCase()
 
     if (storeEnv === 'jsonl') {
-      console.log(`[message-store] HUB_STORE=jsonl → JSONL backend: ${FALLBACK_JSONL}`)
+      dbg(`[message-store] HUB_STORE=jsonl → JSONL backend: ${FALLBACK_JSONL}`)
       return new MessageStore(new JsonlMessageStore(FALLBACK_JSONL))
     }
 
@@ -404,10 +410,10 @@ export class MessageStore {
         dbInstance = new SQL.Database()
       }
       const backend = new SqliteMessageStore(dbPath, dbInstance)
-      console.log(`[message-store] HUB_STORE=sqlite → sql.js backend: ${dbPath}`)
+      dbg(`[message-store] HUB_STORE=sqlite → sql.js backend: ${dbPath}`)
       return new MessageStore(backend)
     } catch (err) {
-      console.warn(
+      dbg(
         `[message-store] sql.js unavailable (${(err as Error).message}), ` +
         `using JSONL fallback: ${FALLBACK_JSONL}`,
       )
@@ -417,7 +423,7 @@ export class MessageStore {
 
   /** Synchronous fallback constructor for backward compat. Uses JSONL. */
   static createSync(dbPath = DB_PATH): MessageStore {
-    console.log(`[message-store] sync init → JSONL fallback: ${FALLBACK_JSONL}`)
+    dbg(`[message-store] sync init → JSONL fallback: ${FALLBACK_JSONL}`)
     return new MessageStore(new JsonlMessageStore(FALLBACK_JSONL))
   }
 

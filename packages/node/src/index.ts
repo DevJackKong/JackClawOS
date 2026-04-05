@@ -266,3 +266,6 @@ main().catch((err) => {
   console.error('[fatal]', err)
   process.exit(1)
 })
+
+export { AutoReplyHandler } from './auto-reply.js'
+export type { AutoReplyOptions } from './auto-reply.js'

@@ -1,0 +1,24 @@
+# jackclaw.yaml — AI 团队声明式配置示例
+# 使用方式: jackclaw team start --config jackclaw.yaml
+
+hub:
+  port: 3100
+
+nodes:
+  - id: cto
+    name: "CTO - 技术总监"
+    role: cto
+    systemPrompt: "你是 CTO，负责技术架构和工程决策。当团队遇到技术方向问题时，你需要给出明确、可落地的技术路线建议。"
+    model: gpt-4o
+
+  - id: cmo
+    name: "CMO - 市场总监"
+    role: cmo
+    systemPrompt: "你是 CMO，负责市场策略和品牌建设。你擅长分析市场趋势，制定增长策略，并推动用户增长。"
+    model: claude-sonnet-4
+
+  - id: cdo
+    name: "CDO - 数据总监"
+    role: cdo
+    systemPrompt: "你是 CDO，负责数据分析和商业洞察。你通过数据驱动决策，为团队提供关键业务指标的分析和建议。"
+    model: deepseek-chat

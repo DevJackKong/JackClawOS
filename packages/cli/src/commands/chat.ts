@@ -31,17 +31,52 @@ export function registerChat(program: Command): void {
   program
     .command('chat')
     .description('Open interactive ClawChat session via Hub WebSocket')
+    .argument('[args...]', 'Optional: @handle message (one-shot send) or "to @handle" (set default)')
     .option('--to <nodeId>', 'Default recipient node ID')
     .option('--type <type>', 'Message type: human|task', 'human')
     .option('--hub <url>', 'Hub base URL', 'http://localhost:3100')
     .option('--node-id <id>', 'Your node ID in the chat', 'cli-user')
-    .action(async (opts: { to?: string; type: string; hub: string; nodeId: string }) => {
-      const hubUrl   = opts.hub.replace(/\/$/, '');
-      const myId     = opts.nodeId;
-      const wsUrl    = hubUrl.replace(/^http/, 'ws') + `/chat/ws?nodeId=${encodeURIComponent(myId)}`;
-      let msgType    = opts.type === 'task' ? 'task' : 'human';
+    .action(async (args: string[], opts: { to?: string; type: string; hub: string; nodeId: string }) => {
+      const hubUrl = opts.hub.replace(/\/$/, '');
+      const myId   = opts.nodeId;
 
-      console.log(chalk.bold('JackClaw ClawChat'));
+      // ── @syntax: jackclaw chat @alice 你好 → one-shot send ─────────────────
+      if (args.length > 0 && args[0].startsWith('@')) {
+        const toHandle = args[0].slice(1);
+        const content  = args.slice(1).join(' ');
+        if (!content) {
+          console.error(chalk.red('[chat] 请提供消息内容。用法：jackclaw chat @handle 消息'));
+          process.exit(1);
+        }
+        try {
+          const res = await axios.post(`${hubUrl}/api/chat/send`, {
+            id: randomUUID(), from: myId, to: toHandle,
+            content, timestamp: Date.now(), type: opts.type,
+          }, { timeout: 8000 });
+          const msgId: string = (res.data as { messageId?: string }).messageId ?? '—';
+          console.log(chalk.green(`✅ 消息已发送给 @${toHandle}  messageId: ${msgId}`));
+        } catch (err) {
+          console.error(chalk.red(`❌ 发送失败：${(err as Error).message}`));
+          process.exit(1);
+        }
+        return;
+      }
+
+      // ── to @bob: jackclaw chat to @bob → start interactive with default ────
+      if (args.length > 0 && args[0].toLowerCase() === 'to') {
+        const handleArg = args[1] ?? '';
+        if (!handleArg.startsWith('@')) {
+          console.error(chalk.red('[chat] 用法：jackclaw chat to @handle'));
+          process.exit(1);
+        }
+        opts.to = handleArg.slice(1);
+        console.log(chalk.yellow(`[chat] 默认聊天对象：@${opts.to}`));
+        // fall through to start interactive session
+      }
+
+      let msgType = opts.type === 'task' ? 'task' : 'human';
+      const wsUrl = hubUrl.replace(/^http/, 'ws') + `/chat/ws?nodeId=${encodeURIComponent(myId)}`;
+
       console.log(chalk.gray(`Hub: ${hubUrl}  |  node: ${myId}`));
       console.log(chalk.gray('/task = task mode  /human = human mode  /quit = exit'));
       console.log(chalk.gray('─'.repeat(50)));
@@ -118,6 +153,14 @@ export function registerChat(program: Command): void {
         if (input === '/human') {
           msgType = 'human';
           console.log(chalk.yellow('[chat] human mode'));
+          rl.prompt(); return;
+        }
+
+        // /to @handle — switch default recipient within session
+        const toMatch = input.match(/^\/to\s+@(\S+)$/);
+        if (toMatch) {
+          opts.to = toMatch[1];
+          console.log(chalk.yellow(`[chat] 默认聊天对象切换为 @${opts.to}`));
           rl.prompt(); return;
         }
 

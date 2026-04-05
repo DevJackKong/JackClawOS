@@ -22,6 +22,7 @@ import { KimiProvider } from './providers/kimi.js'
 import { ZhipuProvider } from './providers/zhipu.js'
 import { BaichuanProvider } from './providers/baichuan.js'
 import { OllamaProvider } from './providers/ollama.js'
+import { OpenClawProvider } from './providers/openclaw.js'
 
 // ─── Cost per 1M tokens (USD) ────────────────────────────────────────
 const PRICE_TABLE: Record<string, { input: number; output: number }> = {
@@ -339,6 +340,7 @@ export class LLMGateway {
       case 'zhipu':     return new ZhipuProvider(config)
       case 'baichuan':  return new BaichuanProvider(config)
       case 'ollama':    return new OllamaProvider(config)
+      case 'openclaw':  return new OpenClawProvider(config)
       default:          return new OpenAICompatibleProvider(config)
     }
   }

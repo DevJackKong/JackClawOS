@@ -16,10 +16,12 @@
     "@jackclaw/node": "^0.2.0",
     "@jackclaw/protocol": "^0.2.0",
     "@jackclaw/tunnel": "^0.2.0",
+    "@types/js-yaml": "^4.0.9",
     "axios": "^1.6.0",
     "chalk": "^4.1.2",
     "commander": "^11.1.0",
     "inquirer": "^8.2.6",
+    "js-yaml": "^4.1.1",
     "ws": "^8.0.0"
   },
   "devDependencies": {

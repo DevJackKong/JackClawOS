@@ -14,14 +14,16 @@
     "node": ">=22"
   },
   "dependencies": {
-    "@jackclaw/protocol": "^0.2.0"
+    "@jackclaw/protocol": "^0.2.0",
+    "ws": "^8.0.0"
   },
   "peerDependencies": {
     "openclaw": ">=2026.3.28"
   },
   "devDependencies": {
     "typescript": "^5.4.0",
-    "@types/node": "^20.0.0"
+    "@types/node": "^20.0.0",
+    "@types/ws": "^8.0.0"
   },
   "openclaw": {
     "extensions": [

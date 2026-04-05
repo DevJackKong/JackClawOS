@@ -7,14 +7,26 @@
 
 import { Router, Request, Response } from 'express'
 import { presenceManager } from '../presence'
+import { directoryStore } from '../store/directory'
 
 const router = Router()
 
-// GET /api/presence/online — list all online @handles
+// GET /api/presence/online — list all online users with enriched info
 // NOTE: this route must be registered BEFORE /:handle to avoid shadowing
 router.get('/online', (_req: Request, res: Response) => {
   const handles = presenceManager.getOnlineHandles()
-  return res.json({ handles, count: handles.length })
+  const users = handles.map(handle => {
+    const resolved = presenceManager.resolveHandle(handle)
+    const profile  = directoryStore.getProfile(handle)
+    return {
+      handle,
+      nodeId:      resolved.nodeId ?? '',
+      displayName: profile?.displayName ?? handle,
+      role:        profile?.role ?? 'member',
+      onlineSince: resolved.nodeId ? (presenceManager.getConnectedAt(resolved.nodeId) ?? null) : null,
+    }
+  })
+  return res.json({ users, count: users.length })
 })
 
 // GET /api/presence/:handle — presence info for a specific @handle

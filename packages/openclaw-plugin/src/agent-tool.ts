@@ -34,10 +34,12 @@ async function hubRequest<T>(
   method: 'GET' | 'POST',
   path: string,
   body?: unknown,
+  token?: string,
 ): Promise<T> {
   const url = `${DEFAULT_HUB_URL}${path}`
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-  if (CEO_TOKEN) headers['Authorization'] = `Bearer ${CEO_TOKEN}`
+  const bearerToken = token ?? CEO_TOKEN
+  if (bearerToken) headers['Authorization'] = `Bearer ${bearerToken}`
 
   const res = await fetch(url, {
     method,
@@ -50,6 +52,26 @@ async function hubRequest<T>(
     throw new Error(`Hub ${method} ${path} → ${res.status}: ${text}`)
   }
   return res.json() as Promise<T>
+}
+
+/**
+ * readChatJwt — 从 ~/.jackclaw/clawchat-auth.json 读取 JWT
+ *
+ * 文件结构：{ "token": "eyJ..." }
+ * 读取失败时静默返回空字符串（允许降级到 CEO_TOKEN）。
+ */
+async function readChatJwt(): Promise<string> {
+  try {
+    const os = await import('os')
+    const path = await import('path')
+    const fs = await import('fs/promises')
+    const filePath = path.join(os.homedir(), '.jackclaw', 'clawchat-auth.json')
+    const raw = await fs.readFile(filePath, 'utf8')
+    const data = JSON.parse(raw) as { token?: string }
+    return data.token ?? ''
+  } catch {
+    return ''
+  }
 }
 
 // ─── Tool Definitions ─────────────────────────────────────────────────────────
@@ -352,6 +374,262 @@ function buildPlanTaskTool(): OpenClawTool {
   }
 }
 
+// ─── Chat Tool Definitions ────────────────────────────────────────────────────
+
+/**
+ * jackclaw_chat_send — 发送消息给某个用户/Agent
+ *
+ * 调用 Hub POST /api/chat/send，JWT 优先从 clawchat-auth.json 读取。
+ */
+function buildChatSendTool(): OpenClawTool {
+  return {
+    name: 'jackclaw_chat_send',
+    description: '发送消息给某个用户或 Agent（通过 @handle 标识）。支持普通消息和任务消息。',
+    parameters: {
+      type: 'object',
+      required: ['to', 'message'],
+      properties: {
+        to: {
+          type: 'string',
+          description: '收件人的 @handle（例如 "@alice" 或 "alice"）',
+        },
+        message: {
+          type: 'string',
+          description: '消息内容',
+        },
+        type: {
+          type: 'string',
+          enum: ['human', 'task'],
+          description: '（可选）消息类型：human = 普通消息，task = 任务消息。默认 human',
+        },
+      },
+    },
+    async handler(params) {
+      const p = params as { to: string; message: string; type?: 'human' | 'task' }
+      const jwt = await readChatJwt()
+      const result = await hubRequest<{ messageId: string; status: string }>(
+        'POST',
+        '/api/chat/send',
+        {
+          to: p.to,
+          message: p.message,
+          type: p.type ?? 'human',
+          sentAt: Date.now(),
+        },
+        jwt || undefined,
+      )
+      return {
+        success: true,
+        messageId: result.messageId,
+        status: result.status,
+        message: `消息已发送给 ${p.to}（ID: ${result.messageId}）`,
+      }
+    },
+  }
+}
+
+/**
+ * jackclaw_chat_inbox — 查看收件箱
+ *
+ * 调用 Hub GET /api/chat/inbox，返回最新收到的消息列表。
+ */
+function buildChatInboxTool(): OpenClawTool {
+  return {
+    name: 'jackclaw_chat_inbox',
+    description: '查看收件箱中的消息列表，按时间倒序返回最新消息。',
+    parameters: {
+      type: 'object',
+      required: [],
+      properties: {
+        limit: {
+          type: 'number',
+          description: '（可选）返回的最大消息数量，默认 20，最大 100',
+        },
+      },
+    },
+    async handler(params) {
+      const p = params as { limit?: number }
+      const jwt = await readChatJwt()
+      const qs = p.limit !== undefined ? `?limit=${p.limit}` : ''
+      const result = await hubRequest<{
+        messages: Array<{
+          messageId: string
+          from: string
+          message: string
+          type: string
+          receivedAt: number
+          read: boolean
+        }>
+        total: number
+      }>('GET', `/api/chat/inbox${qs}`, undefined, jwt || undefined)
+
+      const messages = result.messages ?? []
+      if (messages.length === 0) {
+        return { count: 0, messages: [], summary: '收件箱为空。' }
+      }
+
+      const lines = messages.map(
+        (m) =>
+          `[${m.read ? '已读' : '未读'}] ${m.from}: ${m.message.slice(0, 60)}${m.message.length > 60 ? '…' : ''} ` +
+          `（${new Date(m.receivedAt).toLocaleString('zh-CN')}）`,
+      )
+
+      return {
+        count: result.total,
+        messages,
+        summary: `收件箱共 ${result.total} 条消息：\n${lines.join('\n')}`,
+      }
+    },
+  }
+}
+
+/**
+ * jackclaw_chat_threads — 查看会话列表
+ *
+ * 调用 Hub GET /api/chat/threads，返回当前用户的所有会话。
+ */
+function buildChatThreadsTool(): OpenClawTool {
+  return {
+    name: 'jackclaw_chat_threads',
+    description: '查看所有聊天会话（threads）列表，包括对方信息和最后一条消息预览。',
+    parameters: {
+      type: 'object',
+      required: [],
+      properties: {},
+    },
+    async handler(_params) {
+      const jwt = await readChatJwt()
+      const result = await hubRequest<{
+        threads: Array<{
+          threadId: string
+          peer: string
+          peerHandle: string
+          lastMessage: string
+          lastMessageAt: number
+          unreadCount: number
+        }>
+      }>('GET', '/api/chat/threads', undefined, jwt || undefined)
+
+      const threads = result.threads ?? []
+      if (threads.length === 0) {
+        return { count: 0, threads: [], summary: '暂无会话记录。' }
+      }
+
+      const lines = threads.map(
+        (t) =>
+          `[${t.unreadCount > 0 ? `${t.unreadCount}条未读` : '已读'}] @${t.peerHandle}: ` +
+          `${t.lastMessage.slice(0, 50)}${t.lastMessage.length > 50 ? '…' : ''} ` +
+          `（${new Date(t.lastMessageAt).toLocaleString('zh-CN')}）`,
+      )
+
+      return {
+        count: threads.length,
+        threads,
+        summary: `共 ${threads.length} 个会话：\n${lines.join('\n')}`,
+      }
+    },
+  }
+}
+
+/**
+ * jackclaw_chat_search_users — 搜索用户
+ *
+ * 调用 Hub GET /api/search/contacts?q=...，支持按用户名、handle 模糊搜索。
+ */
+function buildChatSearchUsersTool(): OpenClawTool {
+  return {
+    name: 'jackclaw_chat_search_users',
+    description: '按关键词搜索 JackClaw 用户（支持用户名、@handle 模糊匹配）。',
+    parameters: {
+      type: 'object',
+      required: ['query'],
+      properties: {
+        query: {
+          type: 'string',
+          description: '搜索关键词（用户名或 handle 的部分内容）',
+        },
+      },
+    },
+    async handler(params) {
+      const p = params as { query: string }
+      const jwt = await readChatJwt()
+      const q = encodeURIComponent(p.query)
+      const result = await hubRequest<{
+        users: Array<{
+          userId: string
+          handle: string
+          displayName: string
+          online: boolean
+          avatarUrl?: string
+        }>
+        total: number
+      }>('GET', `/api/search/contacts?q=${q}`, undefined, jwt || undefined)
+
+      const users = result.users ?? []
+      if (users.length === 0) {
+        return { count: 0, users: [], summary: `未找到匹配「${p.query}」的用户。` }
+      }
+
+      const lines = users.map(
+        (u) =>
+          `${u.online ? '🟢' : '⚫'} @${u.handle}（${u.displayName}）— ID: ${u.userId}`,
+      )
+
+      return {
+        count: result.total,
+        users,
+        summary: `找到 ${result.total} 个用户：\n${lines.join('\n')}`,
+      }
+    },
+  }
+}
+
+/**
+ * jackclaw_chat_online — 查看在线用户
+ *
+ * 调用 Hub GET /api/presence/online，返回当前在线的用户列表。
+ */
+function buildChatOnlineTool(): OpenClawTool {
+  return {
+    name: 'jackclaw_chat_online',
+    description: '查看当前在线的 JackClaw 用户列表（实时 presence 状态）。',
+    parameters: {
+      type: 'object',
+      required: [],
+      properties: {},
+    },
+    async handler(_params) {
+      const jwt = await readChatJwt()
+      const result = await hubRequest<{
+        online: Array<{
+          userId: string
+          handle: string
+          displayName: string
+          lastSeenAt: number
+          status?: string
+        }>
+        count: number
+      }>('GET', '/api/presence/online', undefined, jwt || undefined)
+
+      const online = result.online ?? []
+      if (online.length === 0) {
+        return { count: 0, online: [], summary: '当前无在线用户。' }
+      }
+
+      const lines = online.map(
+        (u) =>
+          `🟢 @${u.handle}（${u.displayName}）${u.status ? `— ${u.status}` : ''}`,
+      )
+
+      return {
+        count: result.count,
+        online,
+        summary: `当前在线 ${result.count} 人：\n${lines.join('\n')}`,
+      }
+    },
+  }
+}
+
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 /**
@@ -366,5 +644,10 @@ export function getJackClawTools(nodeId: string): OpenClawTool[] {
     buildCheckTrustTool(nodeId),
     buildMySessionsTool(nodeId),
     buildPlanTaskTool(),
+    buildChatSendTool(),
+    buildChatInboxTool(),
+    buildChatThreadsTool(),
+    buildChatSearchUsersTool(),
+    buildChatOnlineTool(),
   ]
 }

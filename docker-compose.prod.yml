@@ -1,0 +1,91 @@
+version: '3.9'
+
+# Production deployment: Hub + Nginx HTTPS reverse proxy
+# Usage:
+#   cp .env.hub.example .env.hub
+#   mkdir -p ~/.jackclaw/hub
+#   docker compose -f docker-compose.prod.yml --env-file .env.hub up -d
+
+networks:
+  jackclaw-prod:
+    driver: bridge
+
+volumes:
+  hub-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${HUB_DATA_DIR:-~/.jackclaw/hub}
+  certbot-www:
+  certbot-conf:
+
+services:
+  # ─────────────────────────────────────────────
+  # JackClaw Hub — production
+  # ─────────────────────────────────────────────
+  hub:
+    build:
+      context: .
+      dockerfile: Dockerfile.hub
+      target: production
+    image: jackclaw-hub:${VERSION:-latest}
+    container_name: jackclaw-hub-prod
+    restart: always
+    expose:
+      - "3100"        # only reachable inside the network; Nginx fronts it
+    environment:
+      NODE_ENV: production
+      HUB_PORT: 3100
+      HUB_DATA_DIR: /data
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      HUB_URL: ${HUB_URL:?HUB_URL is required}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    volumes:
+      - hub-data:/data
+    networks:
+      - jackclaw-prod
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3100/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # ─────────────────────────────────────────────
+  # Nginx — HTTPS reverse proxy (Let's Encrypt)
+  # ─────────────────────────────────────────────
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: jackclaw-nginx
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/nginx/hub.conf:/etc/nginx/conf.d/default.conf:ro
+      - certbot-www:/var/www/certbot:ro
+      - certbot-conf:/etc/letsencrypt:ro
+    networks:
+      - jackclaw-prod
+    depends_on:
+      hub:
+        condition: service_healthy
+
+  # ─────────────────────────────────────────────
+  # Certbot — automatic SSL certificate renewal
+  # ─────────────────────────────────────────────
+  certbot:
+    image: certbot/certbot:latest
+    container_name: jackclaw-certbot
+    restart: unless-stopped
+    volumes:
+      - certbot-www:/var/www/certbot
+      - certbot-conf:/etc/letsencrypt
+    # Renew every 12 h; certbot only acts when cert is near expiry
+    entrypoint: >
+      sh -c "trap exit TERM;
+             while :; do
+               certbot renew --webroot -w /var/www/certbot --quiet;
+               sleep 12h & wait $${!};
+             done"

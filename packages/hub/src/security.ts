@@ -55,15 +55,25 @@ export const rateLimiter = {
     message: { error: 'Too many requests. Limit: 1000/min.' },
   }),
 
-  /** Login: 5 attempts/min per IP+nodeId — brute-force protection */
+  /** Login: 10 attempts/min per IP+nodeId — brute-force protection */
   login: rateLimit({
     windowMs: 60_000,
-    max: IS_TEST ? 100_000 : 5,
+    max: IS_TEST ? 100_000 : 10,
     standardHeaders: true,
     legacyHeaders: false,
     keyGenerator: makeKeyGenerator('login'),
     message: { error: 'Too many login attempts. Please wait 1 minute.' },
     skipSuccessfulRequests: false,
+  }),
+
+  /** Register: 5 attempts/min per IP — prevent account flooding */
+  register: rateLimit({
+    windowMs: 60_000,
+    max: IS_TEST ? 100_000 : 5,
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: makeKeyGenerator('register'),
+    message: { error: 'Too many registration attempts. Please wait 1 minute.' },
   }),
 
   /** Message send: 60/min per IP+nodeId */
@@ -89,32 +99,42 @@ export const rateLimiter = {
 
 // ─── CORS ─────────────────────────────────────────────────────────────────────
 
-// Configure via env: comma-separated origin lists
+// Configure via env: comma-separated origin lists.
+// CORS_ORIGINS takes precedence; set to "*" to allow all origins (open API mode).
+const CORS_WILDCARD = process.env.CORS_ORIGINS === '*'
+
 const DASHBOARD_ORIGINS = (process.env.DASHBOARD_ORIGINS ?? 'http://localhost:3000,http://localhost:5173')
   .split(',').map(s => s.trim()).filter(Boolean)
 
 const FEDERATION_ORIGINS = (process.env.FEDERATION_ORIGINS ?? '')
   .split(',').map(s => s.trim()).filter(Boolean)
 
-const ALLOWED_ORIGINS = new Set([...DASHBOARD_ORIGINS, ...FEDERATION_ORIGINS])
+const CORS_EXTRA = (process.env.CORS_ORIGINS && process.env.CORS_ORIGINS !== '*')
+  ? process.env.CORS_ORIGINS.split(',').map(s => s.trim()).filter(Boolean)
+  : []
+
+const ALLOWED_ORIGINS = new Set([...DASHBOARD_ORIGINS, ...FEDERATION_ORIGINS, ...CORS_EXTRA])
 
 /**
  * CORS middleware.
- * - Allows Dashboard and federated Hub origins.
+ * - If CORS_ORIGINS=* → allow all origins (open API mode, no credentials).
+ * - Otherwise allows Dashboard, federated Hub, and CORS_ORIGINS entries.
  * - Caches preflight responses for 1 hour.
  * - Responds to OPTIONS preflight with 204.
  */
 export function corsConfig(): RequestHandler {
   return (req: Request, res: Response, next: NextFunction): void => {
     const origin = req.headers.origin
-    if (origin && ALLOWED_ORIGINS.has(origin)) {
+    if (CORS_WILDCARD) {
+      res.setHeader('Access-Control-Allow-Origin', '*')
+    } else if (origin && ALLOWED_ORIGINS.has(origin)) {
       res.setHeader('Access-Control-Allow-Origin', origin)
       res.setHeader('Vary', 'Origin')
+      res.setHeader('Access-Control-Allow-Credentials', 'true')
     }
     res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS')
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-Node-ID')
     res.setHeader('Access-Control-Max-Age', '3600')        // 1h preflight cache
-    res.setHeader('Access-Control-Allow-Credentials', 'true')
 
     if (req.method === 'OPTIONS') {
       res.status(204).end()

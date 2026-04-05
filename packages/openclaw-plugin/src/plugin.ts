@@ -20,7 +20,9 @@ import {
   formatSummary,
   formatNodeStatus,
   fetchNodes,
+  ensureClawChatAuth,
 } from './bridge.js'
+import { initPluginChatClient, getPluginChatClient } from './chat-bridge.js'
 
 /** Minimal delivery helper — calls the Gateway deliver endpoint if configured. */
 async function pushNotification(text: string, ctx: OpenClawPluginServiceContext): Promise<void> {
@@ -56,12 +58,60 @@ async function pushNotification(text: string, ctx: OpenClawPluginServiceContext)
 function buildJackclawService(): OpenClawPluginService {
   let stopped = false
   let lastReportingNodes = 0
+  // Dedup window: message id → arrival timestamp (purged after 60 s)
+  const recentMessageIds = new Map<string, number>()
 
   return {
     id: 'jackclaw-hub-poller',
     async start(ctx: OpenClawPluginServiceContext) {
       ctx.logger.info('[jackclaw] Hub poller started (interval: 60s)')
       stopped = false
+
+      // ── Auto-register / refresh ClawChat Hub account on first load ──────
+      const hubUrl = process.env['JACKCLAW_HUB_URL'] ?? 'http://localhost:3100'
+      let chatToken = ''
+      try {
+        // Prefer OpenClaw user identity when available, fall back to random handle.
+        const cfg = ctx.config as Record<string, unknown>
+        const identity = (cfg['user'] as Record<string, unknown> | undefined)?.['handle'] as string | undefined
+        const { handle, token } = await ensureClawChatAuth(hubUrl, identity)
+        chatToken = token
+        ctx.logger.info(`[jackclaw] ClawChat auth ready (handle: ${handle})`)
+      } catch (err) {
+        // Non-fatal: plugin still works without ClawChat registration.
+        ctx.logger.warn(`[jackclaw] ClawChat auto-register failed: ${String(err)}`)
+      }
+
+      // ── Start WebSocket chat client ───────────────────────────────────────
+      if (chatToken) {
+        const chatClient = initPluginChatClient(hubUrl, chatToken)
+
+        // Push inbound ClawChat messages to the OpenClaw delivery channel
+        chatClient.onMessage((raw) => {
+          const msg = raw as { id?: string; from?: string; to?: string; content?: string; type?: string }
+          const id = typeof msg.id === 'string' ? msg.id : ''
+          if (!id) return
+
+          // 60-second dedup window
+          const now = Date.now()
+          if (recentMessageIds.has(id)) return
+          recentMessageIds.set(id, now)
+          // Purge expired entries
+          for (const [k, ts] of recentMessageIds) {
+            if (now - ts > 60_000) recentMessageIds.delete(k)
+          }
+
+          const from = typeof msg.from === 'string' ? msg.from : 'unknown'
+          const content = typeof msg.content === 'string' ? msg.content : ''
+          const icon = msg.type === 'task' ? '🔧' : '💬'
+          const text = `${icon} ClawChat | @${from}: ${content}`
+
+          void pushNotification(text, ctx)
+        })
+
+        chatClient.connect()
+        ctx.logger.info('[jackclaw] PluginChatClient connected')
+      }
 
       const poll = async () => {
         if (stopped) return
@@ -106,6 +156,12 @@ function buildJackclawService(): OpenClawPluginService {
       if (self._interval) {
         clearInterval(self._interval)
         delete self._interval
+      }
+      // Stop WebSocket chat client
+      const chatClient = getPluginChatClient()
+      if (chatClient) {
+        chatClient.stop()
+        ctx.logger.info('[jackclaw] PluginChatClient stopped')
       }
       ctx.logger.info('[jackclaw] Hub poller stopped')
     },

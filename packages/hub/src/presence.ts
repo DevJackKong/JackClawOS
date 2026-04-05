@@ -78,6 +78,11 @@ class PresenceManager {
     return handles
   }
 
+  /** Returns the timestamp when the given nodeId connected, or null if offline. */
+  getConnectedAt(nodeId: string): number | null {
+    return this.nodes.get(nodeId)?.connectedAt ?? null
+  }
+
   /** Presence info for a @handle (online state + last seen timestamp). */
   getPresence(handle: string): PresenceInfo {
     const nodeId  = directoryStore.getNodeIdForHandle(handle)

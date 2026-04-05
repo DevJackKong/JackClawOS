@@ -1,0 +1,72 @@
+# ── Stage 1: Builder ────────────────────────────────────────────
+FROM node:20-alpine AS builder
+WORKDIR /app
+
+# Copy root workspace manifests
+COPY package*.json ./
+COPY tsconfig.base.json ./
+
+# Copy only the packages that hub depends on
+COPY packages/protocol/package*.json   packages/protocol/
+COPY packages/memory/package*.json     packages/memory/
+COPY packages/payment-vault/package*.json packages/payment-vault/
+COPY packages/watchdog/package*.json   packages/watchdog/
+COPY packages/hub/package*.json        packages/hub/
+
+# Install all workspace deps (needed for monorepo resolution)
+RUN npm ci --ignore-scripts
+
+# Copy source for hub and its local dependencies
+COPY packages/protocol   packages/protocol
+COPY packages/memory     packages/memory
+COPY packages/payment-vault packages/payment-vault
+COPY packages/watchdog   packages/watchdog
+COPY packages/hub        packages/hub
+
+# Build only hub and its deps
+RUN npm run build --workspace=packages/protocol \
+ && npm run build --workspace=packages/memory \
+ && npm run build --workspace=packages/payment-vault \
+ && npm run build --workspace=packages/watchdog \
+ && npm run build --workspace=packages/hub
+
+# ── Stage 2: Production ──────────────────────────────────────────
+FROM node:20-alpine AS production
+
+# Security: non-root user
+RUN addgroup -S jackclaw && adduser -S jackclaw -G jackclaw
+
+WORKDIR /app
+
+# Copy workspace root (needed for package resolution)
+COPY --from=builder /app/package*.json ./
+COPY --from=builder /app/node_modules  ./node_modules
+
+# Copy built packages
+COPY --from=builder /app/packages/protocol/dist   packages/protocol/dist
+COPY --from=builder /app/packages/protocol/package*.json packages/protocol/
+COPY --from=builder /app/packages/memory/dist     packages/memory/dist
+COPY --from=builder /app/packages/memory/package*.json packages/memory/
+COPY --from=builder /app/packages/payment-vault/dist packages/payment-vault/dist
+COPY --from=builder /app/packages/payment-vault/package*.json packages/payment-vault/
+COPY --from=builder /app/packages/watchdog/dist   packages/watchdog/dist
+COPY --from=builder /app/packages/watchdog/package*.json packages/watchdog/
+COPY --from=builder /app/packages/hub/dist        packages/hub/dist
+COPY --from=builder /app/packages/hub/public      packages/hub/public
+COPY --from=builder /app/packages/hub/package*.json packages/hub/
+
+# Persistent data directory
+RUN mkdir -p /data && chown jackclaw:jackclaw /data
+
+USER jackclaw
+
+EXPOSE 3100
+
+ENV NODE_ENV=production \
+    HUB_PORT=3100 \
+    HUB_DATA_DIR=/data
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD wget -qO- http://localhost:3100/health || exit 1
+
+CMD ["node", "packages/hub/dist/index.js"]

@@ -10,6 +10,8 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { messageStore } from '../store/message-store'
+import { presenceManager } from '../presence'
+import { directoryStore } from '../store/directory'
 import type { SocialProfile } from '@jackclaw/protocol'
 
 const router = Router()
@@ -61,13 +63,20 @@ router.get('/contacts', (req: Request, res: Response) => {
   try { profiles = JSON.parse(fs.readFileSync(path.join(HUB_DIR, 'social-profiles.json'), 'utf-8')) } catch { /* ok */ }
 
   const seen = new Set<string>()
-  const contacts: Array<{ handle: string; nodeId: string; profile: SocialProfile | null }> = []
+  const contacts: Array<{ handle: string; displayName: string; nodeId: string; role: string; online: boolean }> = []
 
   // Match by handle
   for (const [handle, info] of Object.entries(dir)) {
     if (handle.toLowerCase().includes(qLow)) {
       seen.add(handle)
-      contacts.push({ handle, nodeId: info.nodeId, profile: profiles[handle] ?? null })
+      const profile = profiles[handle] ?? null
+      contacts.push({
+        handle,
+        nodeId:      info.nodeId,
+        displayName: profile?.ownerName ?? handle,
+        role:        directoryStore.getProfile(handle)?.role ?? 'member',
+        online:      presenceManager.getPresence(handle).online,
+      })
     }
   }
 
@@ -78,7 +87,13 @@ router.get('/contacts', (req: Request, res: Response) => {
       p.ownerName?.toLowerCase().includes(qLow) ||
       p.bio?.toLowerCase().includes(qLow)
     ) {
-      contacts.push({ handle, nodeId: dir[handle]?.nodeId ?? '', profile: p })
+      contacts.push({
+        handle,
+        nodeId:      dir[handle]?.nodeId ?? '',
+        displayName: p.ownerName ?? handle,
+        role:        directoryStore.getProfile(handle)?.role ?? 'member',
+        online:      presenceManager.getPresence(handle).online,
+      })
     }
   }
 

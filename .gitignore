@@ -63,3 +63,7 @@ data/
 *.p12
 secrets/
 .worktrees
+!deploy/hub/dist/
+!deploy/hub/dist/**
+!deploy/hub/node_modules/
+!deploy/hub/node_modules/**

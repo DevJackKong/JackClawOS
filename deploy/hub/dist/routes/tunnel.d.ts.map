@@ -1,0 +1,1 @@
+{"version":3,"file":"tunnel.d.ts","sourceRoot":"","sources":["../../src/routes/tunnel.ts"],"names":[],"mappings":"AAAA;;;;;;;;;;GAUG;AAIH,OAAO,IAAI,MAAM,MAAM,CAAA;AAGvB,QAAA,MAAM,MAAM,4CAAW,CAAA;AA4CvB;;;GAGG;AACH,wBAAgB,eAAe,CAAC,MAAM,EAAE,IAAI,CAAC,MAAM,EAAE,MAAM,EAAE,MAAM,GAAG,IAAI,CAgEzE;AAED,oDAAoD;AACpD,wBAAgB,mBAAmB,IAAI,MAAM,EAAE,CAE9C;AA4FD,eAAe,MAAM,CAAA"}

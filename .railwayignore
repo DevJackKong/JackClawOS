@@ -1,0 +1,16 @@
+node_modules
+dist
+.git
+docs
+tests
+examples
+packages/cli
+packages/dashboard
+packages/harness
+packages/llm-gateway
+packages/node
+packages/openclaw-plugin
+packages/pwa
+packages/tunnel
+*.md
+!README.md

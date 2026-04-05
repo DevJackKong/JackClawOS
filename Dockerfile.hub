@@ -2,20 +2,18 @@
 FROM node:20-alpine AS builder
 WORKDIR /app
 
-# Copy root workspace manifests
-COPY package*.json ./
+# Copy root workspace manifest (NO lockfile — avoids Node version mismatch)
+COPY package.json ./
 COPY tsconfig.base.json ./
 
 # Copy only the packages that hub depends on
-COPY packages/protocol/package*.json   packages/protocol/
-COPY packages/memory/package*.json     packages/memory/
-COPY packages/payment-vault/package*.json packages/payment-vault/
-COPY packages/watchdog/package*.json   packages/watchdog/
-COPY packages/hub/package*.json        packages/hub/
+COPY packages/protocol/package.json   packages/protocol/
+COPY packages/memory/package.json     packages/memory/
+COPY packages/payment-vault/package.json packages/payment-vault/
+COPY packages/watchdog/package.json   packages/watchdog/
+COPY packages/hub/package.json        packages/hub/
 
-# Install all workspace deps (needed for monorepo resolution)
-# Use npm install (not ci) for broader compatibility
-COPY package-lock.json* ./
+# Install all workspace deps (fresh, no lockfile)
 RUN npm install --ignore-scripts
 
 # Copy source for hub and its local dependencies
@@ -41,21 +39,21 @@ RUN addgroup -S jackclaw && adduser -S jackclaw -G jackclaw
 WORKDIR /app
 
 # Copy workspace root (needed for package resolution)
-COPY --from=builder /app/package*.json ./
+COPY --from=builder /app/package.json ./
 COPY --from=builder /app/node_modules  ./node_modules
 
 # Copy built packages
 COPY --from=builder /app/packages/protocol/dist   packages/protocol/dist
-COPY --from=builder /app/packages/protocol/package*.json packages/protocol/
+COPY --from=builder /app/packages/protocol/package.json packages/protocol/
 COPY --from=builder /app/packages/memory/dist     packages/memory/dist
-COPY --from=builder /app/packages/memory/package*.json packages/memory/
+COPY --from=builder /app/packages/memory/package.json packages/memory/
 COPY --from=builder /app/packages/payment-vault/dist packages/payment-vault/dist
-COPY --from=builder /app/packages/payment-vault/package*.json packages/payment-vault/
+COPY --from=builder /app/packages/payment-vault/package.json packages/payment-vault/
 COPY --from=builder /app/packages/watchdog/dist   packages/watchdog/dist
-COPY --from=builder /app/packages/watchdog/package*.json packages/watchdog/
+COPY --from=builder /app/packages/watchdog/package.json packages/watchdog/
 COPY --from=builder /app/packages/hub/dist        packages/hub/dist
 COPY --from=builder /app/packages/hub/public      packages/hub/public
-COPY --from=builder /app/packages/hub/package*.json packages/hub/
+COPY --from=builder /app/packages/hub/package.json packages/hub/
 
 # Persistent data directory
 RUN mkdir -p /data && chown jackclaw:jackclaw /data

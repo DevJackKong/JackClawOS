@@ -14,7 +14,9 @@ COPY packages/watchdog/package*.json   packages/watchdog/
 COPY packages/hub/package*.json        packages/hub/
 
 # Install all workspace deps (needed for monorepo resolution)
-RUN npm ci --ignore-scripts
+# Use npm install (not ci) for broader compatibility
+COPY package-lock.json* ./
+RUN npm install --ignore-scripts
 
 # Copy source for hub and its local dependencies
 COPY packages/protocol   packages/protocol

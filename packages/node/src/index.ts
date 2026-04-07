@@ -29,7 +29,7 @@ import { MoltbookClient } from './integrations/moltbook'
 import { createMoltbookAgent } from './integrations/moltbook-agent'
 import { ChannelBridge } from './channels'
 
-async function main() {
+export async function main() {
   console.log('🦞 JackClaw Node starting...')
 
   const config = loadConfig()
@@ -262,10 +262,6 @@ async function main() {
   console.log('🦞 JackClaw Node ready.')
 }
 
-main().catch((err) => {
-  console.error('[fatal]', err)
-  process.exit(1)
-})
 
 export { AutoReplyHandler } from './auto-reply.js'
 export type { AutoReplyOptions } from './auto-reply.js'

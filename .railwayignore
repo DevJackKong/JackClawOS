@@ -5,6 +5,7 @@ docs
 tests
 examples
 packages/cli
+packages/create-jackclaw
 packages/dashboard
 packages/harness
 packages/llm-gateway

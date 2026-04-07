@@ -1,0 +1,85 @@
+# ── Stage 1: Builder ────────────────────────────────────────────
+FROM node:20-alpine AS builder
+WORKDIR /app
+
+COPY package.json ./
+COPY tsconfig.base.json ./
+
+# Copy package manifests for everything cli depends on
+COPY packages/protocol/package.json     packages/protocol/
+COPY packages/memory/package.json       packages/memory/
+COPY packages/llm-gateway/package.json  packages/llm-gateway/
+COPY packages/payment-vault/package.json packages/payment-vault/
+COPY packages/watchdog/package.json     packages/watchdog/
+COPY packages/harness/package.json      packages/harness/
+COPY packages/tunnel/package.json       packages/tunnel/
+COPY packages/hub/package.json          packages/hub/
+COPY packages/node/package.json         packages/node/
+COPY packages/cli/package.json          packages/cli/
+
+RUN npm install --ignore-scripts
+
+# Copy sources
+COPY packages/protocol    packages/protocol
+COPY packages/memory      packages/memory
+COPY packages/llm-gateway packages/llm-gateway
+COPY packages/payment-vault packages/payment-vault
+COPY packages/watchdog    packages/watchdog
+COPY packages/harness     packages/harness
+COPY packages/tunnel      packages/tunnel
+COPY packages/hub         packages/hub
+COPY packages/node        packages/node
+COPY packages/cli         packages/cli
+
+# Build in dependency order
+RUN npm run build --workspace=packages/protocol \
+ && npm run build --workspace=packages/memory \
+ && npm run build --workspace=packages/llm-gateway \
+ && npm run build --workspace=packages/payment-vault \
+ && npm run build --workspace=packages/watchdog \
+ && npm run build --workspace=packages/harness \
+ && npm run build --workspace=packages/tunnel \
+ && npm run build --workspace=packages/hub \
+ && npm run build --workspace=packages/node \
+ && npm run build --workspace=packages/cli
+
+# ── Stage 2: CLI image ───────────────────────────────────────────
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Copy workspace root
+COPY --from=builder /app/package.json ./
+COPY --from=builder /app/node_modules  ./node_modules
+
+# Copy all built packages
+COPY --from=builder /app/packages/protocol/dist      packages/protocol/dist
+COPY --from=builder /app/packages/protocol/package.json packages/protocol/
+COPY --from=builder /app/packages/memory/dist        packages/memory/dist
+COPY --from=builder /app/packages/memory/package.json packages/memory/
+COPY --from=builder /app/packages/llm-gateway/dist   packages/llm-gateway/dist
+COPY --from=builder /app/packages/llm-gateway/package.json packages/llm-gateway/
+COPY --from=builder /app/packages/payment-vault/dist packages/payment-vault/dist
+COPY --from=builder /app/packages/payment-vault/package.json packages/payment-vault/
+COPY --from=builder /app/packages/watchdog/dist      packages/watchdog/dist
+COPY --from=builder /app/packages/watchdog/package.json packages/watchdog/
+COPY --from=builder /app/packages/harness/dist       packages/harness/dist
+COPY --from=builder /app/packages/harness/package.json packages/harness/
+COPY --from=builder /app/packages/tunnel/dist        packages/tunnel/dist
+COPY --from=builder /app/packages/tunnel/package.json packages/tunnel/
+COPY --from=builder /app/packages/hub/dist           packages/hub/dist
+COPY --from=builder /app/packages/hub/package.json   packages/hub/
+COPY --from=builder /app/packages/node/dist          packages/node/dist
+COPY --from=builder /app/packages/node/package.json  packages/node/
+COPY --from=builder /app/packages/cli/dist           packages/cli/dist
+COPY --from=builder /app/packages/cli/package.json   packages/cli/
+
+# Install CLI globally so `jackclaw` is on PATH
+RUN npm install -g /app/packages/cli
+
+# Config and data live here — mount a volume to persist across container runs:
+#   docker run -it --rm -v jackclaw-data:/data jackclaw-cli
+RUN mkdir -p /data
+ENV HOME=/data
+
+CMD ["/bin/sh"]

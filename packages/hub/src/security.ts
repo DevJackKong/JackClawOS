@@ -160,7 +160,7 @@ export function cspHeaders(): RequestHandler {
 
   const policy = [
     `default-src 'self'`,
-    `script-src 'self'`,
+    `script-src 'self' 'unsafe-inline'`,
     `style-src 'self' 'unsafe-inline'`,
     `img-src 'self' data: blob:`,
     `connect-src 'self' ${wsOrigins} ws://localhost:* wss://localhost:*`,

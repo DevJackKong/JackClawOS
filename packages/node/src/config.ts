@@ -14,6 +14,7 @@ export interface JackClawConfig {
   nodeName?: string            // display name for this node
   nodeRole?: string            // role: ceo, engineer, designer, etc.
   hubUrl: string               // e.g. http://localhost:3100
+  callbackUrl?: string         // public URL the hub uses to reach this node (e.g. for Railway/NAT)
   port: number                 // HTTP server port (default 19000)
   reportCron: string           // cron expression (default: '0 8 * * *')
   workspaceDir: string         // OpenClaw workspace for memory files
@@ -61,6 +62,7 @@ const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json')
 
 const DEFAULTS: JackClawConfig = {
   hubUrl: 'http://localhost:3100',
+  callbackUrl: undefined,
   port: 19000,
   reportCron: '0 8 * * *',
   workspaceDir: path.join(os.homedir(), '.openclaw', 'workspace'),
@@ -188,8 +190,10 @@ export function loadConfig(): JackClawConfig {
 
   // Allow env var overrides for testing / containerized deployments
   if (process.env['NODE_PORT']) base.port = parseInt(process.env['NODE_PORT'], 10)
+  if (process.env['PORT'])      base.port = parseInt(process.env['PORT'], 10)  // Railway injects PORT — takes highest priority
   if (process.env['JACKCLAW_HUB_URL']) base.hubUrl = process.env['JACKCLAW_HUB_URL']
   if (process.env['JACKCLAW_NODE_ID']) base.nodeId = process.env['JACKCLAW_NODE_ID']
+  if (process.env['JACKCLAW_CALLBACK_URL']) base.callbackUrl = process.env['JACKCLAW_CALLBACK_URL']
 
   return base
 }

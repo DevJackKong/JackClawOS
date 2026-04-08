@@ -1,0 +1,72 @@
+# ── Stage 1: Builder ────────────────────────────────────────────
+FROM node:20-alpine AS builder
+WORKDIR /app
+
+# Copy root workspace manifest (NO lockfile — avoids Node version mismatch)
+COPY package.json ./
+COPY tsconfig.base.json ./
+
+# Copy only the packages that node depends on
+COPY packages/protocol/package.json     packages/protocol/
+COPY packages/memory/package.json       packages/memory/
+COPY packages/llm-gateway/package.json  packages/llm-gateway/
+COPY packages/harness/package.json      packages/harness/
+COPY packages/node/package.json         packages/node/
+
+# Install all workspace deps (fresh, no lockfile)
+RUN npm install --ignore-scripts
+
+# Copy source for node and its local dependencies
+COPY packages/protocol    packages/protocol
+COPY packages/memory      packages/memory
+COPY packages/llm-gateway packages/llm-gateway
+COPY packages/harness     packages/harness
+COPY packages/node        packages/node
+
+# Build in dependency order
+RUN npm run build --workspace=packages/protocol \
+ && npm run build --workspace=packages/memory \
+ && npm run build --workspace=packages/llm-gateway \
+ && npm run build --workspace=packages/harness \
+ && npm run build --workspace=packages/node
+
+# ── Stage 2: Production ──────────────────────────────────────────
+FROM node:20-alpine AS production
+
+# NOTE: Non-root user disabled — Railway mounts persistent volumes as root, which
+# prevents the jackclaw user from writing to /data. Running as root is safe on Railway
+# since platform-level container isolation handles security.
+# RUN addgroup -S jackclaw && adduser -S jackclaw -G jackclaw
+
+WORKDIR /app
+
+# Copy workspace root (needed for package resolution)
+COPY --from=builder /app/package.json ./
+COPY --from=builder /app/node_modules  ./node_modules
+
+# Copy built packages
+COPY --from=builder /app/packages/protocol/dist      packages/protocol/dist
+COPY --from=builder /app/packages/protocol/package.json packages/protocol/
+COPY --from=builder /app/packages/memory/dist        packages/memory/dist
+COPY --from=builder /app/packages/memory/package.json packages/memory/
+COPY --from=builder /app/packages/llm-gateway/dist   packages/llm-gateway/dist
+COPY --from=builder /app/packages/llm-gateway/package.json packages/llm-gateway/
+COPY --from=builder /app/packages/harness/dist       packages/harness/dist
+COPY --from=builder /app/packages/harness/package.json packages/harness/
+COPY --from=builder /app/packages/node/dist          packages/node/dist
+COPY --from=builder /app/packages/node/package.json  packages/node/
+
+# Persistent data directory — mount a Railway Volume here
+# HOME=/data means ~/.jackclaw/ → /data/.jackclaw/ (identity + config survive restarts)
+RUN mkdir -p /data
+
+EXPOSE 19000
+
+ENV NODE_ENV=production \
+    PORT=19000 \
+    HOME=/data
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD wget -qO- http://localhost:${PORT:-19000}/health || exit 1
+
+CMD ["node", "packages/node/dist/bin.js"]

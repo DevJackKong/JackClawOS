@@ -27,7 +27,7 @@ export function registerInvite(program: Command): void {
       console.log(chalk.gray(`Connecting to ${base} ...`));
 
       try {
-        const res = await axios.post(`${base}/api/nodes/register`, {
+        const res = await axios.post(`${base}/api/register`, {
           nodeId: config.nodeId,
           name: config.name,
           role: config.role,

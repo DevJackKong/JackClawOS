@@ -16,7 +16,7 @@ export async function registerWithHub(
     name: identity.displayName ?? identity.nodeId,
     role: identity.role ?? 'worker',
     publicKey: identity.publicKey,
-    callbackUrl: `http://localhost:${config.port}`,
+    callbackUrl: config.callbackUrl ?? `http://localhost:${config.port}`,
   }
 
   try {

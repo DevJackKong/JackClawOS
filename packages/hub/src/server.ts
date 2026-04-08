@@ -222,12 +222,14 @@ export function createServer(): Application {
   // Public: user profile pages (HTML, no JWT)
   app.use('/', profilePageRoute)
 
+  // Public: cross-node memory sync uses HMAC-SHA256 (not JWT) — must be before jwtAuthMiddleware
+  app.use('/api/memory', memoryRoute)         // org memory, collab sessions, push/pull
+
   // Protected: all other routes require JWT
   app.use('/api/', jwtAuthMiddleware)
   app.use('/api/reports', reportRoute)        // POST / — submit node daily report
   app.use('/api/nodes', nodesRoute)           // GET / — list registered nodes; POST /:nodeId/workload
   app.use('/api/summary', summaryRoute)       // GET / — daily digest summary
-  app.use('/api/memory', memoryRoute)         // org memory, collab sessions, push/pull
   app.use('/api/directory', directoryRoute)   // GET /lookup/:handle, POST /register, /collab/*
   app.use('/api/watchdog', watchdogRoute)     // heartbeat, status, policy, alerts
   app.use('/api/review', humanReviewRoute)    // human-in-the-loop review requests

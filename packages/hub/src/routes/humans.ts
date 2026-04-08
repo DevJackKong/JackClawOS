@@ -13,6 +13,8 @@
 
 import { Router, Request, Response } from 'express'
 import { randomUUID } from 'crypto'
+import jwt from 'jsonwebtoken'
+import { JWT_SECRET } from '../server'
 import {
   registerHuman,
   listHumans,
@@ -26,15 +28,31 @@ import type { ChatMessage } from '../store/chat'
 
 const router = Router()
 
-// 共享同一个 ChatStore 实例（与 chat.ts 共用内存）
-// 注意：这里构造新实例，离线队列独立。如需共用，可从 chat.ts 导出 store。
-// 当前实现：/humans/message 走 HTTP 推送（REST），chat.ts 走 WebSocket 推送
-// 两者都能路由到目标 agentNodeId 的离线队列。
+// 共享同一个 ChatStore 实例
 const store = new ChatStore()
 
-// ─── POST /humans/register ────────────────────────────────────────────────────
+// ─── JWT helper for admin-only routes ─────────────────────────────────────────
+function requireJwt(req: Request, res: Response): { nodeId?: string; role?: string } | null {
+  const authHeader = req.headers.authorization
+  if (!authHeader?.startsWith('Bearer ')) {
+    res.status(401).json({ error: 'Unauthorized — Bearer token required' })
+    return null
+  }
+  try {
+    const payload = jwt.verify(authHeader.slice(7), JWT_SECRET, { algorithms: ['HS256'] }) as any
+    return payload
+  } catch {
+    res.status(401).json({ error: 'Invalid or expired token' })
+    return null
+  }
+}
+
+// ─── POST /humans/register — SECURITY: require JWT ────────────────────────────
 
 router.post('/register', (req: Request, res: Response) => {
+  const payload = requireJwt(req, res)
+  if (!payload) return
+
   const { humanId, displayName, agentNodeId, webhookUrl, feishuOpenId } = req.body ?? {}
   if (!humanId || !displayName) {
     res.status(400).json({ error: 'humanId and displayName required' })
@@ -44,9 +62,11 @@ router.post('/register', (req: Request, res: Response) => {
   res.json({ status: 'ok', human })
 })
 
-// ─── GET /humans ──────────────────────────────────────────────────────────────
+// ─── GET /humans — SECURITY: require JWT ──────────────────────────────────────
 
-router.get('/', (_req: Request, res: Response) => {
+router.get('/', (req: Request, res: Response) => {
+  const payload = requireJwt(req, res)
+  if (!payload) return
   res.json({ humans: listHumans() })
 })
 

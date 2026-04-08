@@ -230,18 +230,17 @@ export class FederationManager {
       throw new Error(`agent_not_found: ${targetHandle} not reachable in federation`)
     }
 
+    const envelopeId = crypto.randomUUID()
+    const sigInput = `${envelopeId}${this.hubUrl}${targetHubUrl}${msg.id}`
+
     const envelope: FederatedMessage = {
-      id: crypto.randomUUID(),
+      id: envelopeId,
       fromHub: this.hubUrl,
       toHub: targetHubUrl,
       message: msg,
       federatedAt: Date.now(),
-      hubSignature: this._sign(`${crypto.randomUUID()}${this.hubUrl}${targetHubUrl}${msg.id}`),
+      hubSignature: this._sign(sigInput),
     }
-
-    // Re-sign with stable content
-    const sigInput = `${envelope.id}${envelope.fromHub}${envelope.toHub}${envelope.message.id}`
-    envelope.hubSignature = this._sign(sigInput)
 
     const result = await postJSON(
       `${targetHubUrl}/api/federation/message`,

@@ -182,17 +182,16 @@ class FederationManager {
         if (!targetHubUrl) {
             throw new Error(`agent_not_found: ${targetHandle} not reachable in federation`);
         }
+        const envelopeId = crypto_1.default.randomUUID();
+        const sigInput = `${envelopeId}${this.hubUrl}${targetHubUrl}${msg.id}`;
         const envelope = {
-            id: crypto_1.default.randomUUID(),
+            id: envelopeId,
             fromHub: this.hubUrl,
             toHub: targetHubUrl,
             message: msg,
             federatedAt: Date.now(),
-            hubSignature: this._sign(`${crypto_1.default.randomUUID()}${this.hubUrl}${targetHubUrl}${msg.id}`),
+            hubSignature: this._sign(sigInput),
         };
-        // Re-sign with stable content
-        const sigInput = `${envelope.id}${envelope.fromHub}${envelope.toHub}${envelope.message.id}`;
-        envelope.hubSignature = this._sign(sigInput);
         const result = await postJSON(`${targetHubUrl}/api/federation/message`, { federatedMessage: envelope });
         return result;
     }

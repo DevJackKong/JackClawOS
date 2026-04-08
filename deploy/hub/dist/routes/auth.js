@@ -153,6 +153,24 @@ router.post('/register', asyncRoute(async (req, res) => {
         res.status(400).json({ error: 'Missing required field: handle' });
         return;
     }
+    // SECURITY: enforce invite code even for passwordless registration
+    const config2 = getHubConfig();
+    if (config2.requireInvite) {
+        if (!inviteCode || typeof inviteCode !== 'string') {
+            res.status(403).json({ error: 'invite_required', message: 'Invite code required for registration' });
+            return;
+        }
+        const invites2 = loadInvites();
+        const record2 = invites2[String(inviteCode).toUpperCase()];
+        if (!record2) {
+            res.status(403).json({ error: 'invalid_invite', message: 'Invalid invite code' });
+            return;
+        }
+        if (record2.usedBy) {
+            res.status(403).json({ error: 'invite_used', message: 'Invite code already used' });
+            return;
+        }
+    }
     const normalizedHandle = String(handle).trim().toLowerCase();
     if (!isPublicRegisterHandle(normalizedHandle)) {
         res.status(400).json({ error: 'Handle must be 3-50 chars in @xxx.yyy format' });
@@ -181,6 +199,10 @@ router.post('/register', asyncRoute(async (req, res) => {
         createdAt: now,
         lastSeen: now,
     });
+    // Consume invite code after successful registration
+    if (config2.requireInvite && inviteCode) {
+        consumeInvite(String(inviteCode), normalizedHandle);
+    }
     res.status(201).json({
         token: issueUserToken(normalizedHandle, resolvedDisplayName),
         user: {
@@ -226,7 +248,7 @@ router.get('/me', (req, res) => {
     }
     const user = users_1.userStore.getUser(handle);
     if (!user) {
-        res.status(404).json({ error: '用户不存在' });
+        res.status(404).json({ error: 'User not found' });
         return;
     }
     res.json(user);

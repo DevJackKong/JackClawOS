@@ -228,10 +228,10 @@ function createServer() {
     app.use('/api/federation', federation_1.default);
     // Public: user profile pages (HTML, no JWT)
     app.use('/', profile_page_1.default);
-    // Public: cross-node memory sync uses HMAC-SHA256 (not JWT) — must be before jwtAuthMiddleware
-    app.use('/api/memory', memory_1.default); // org memory, collab sessions, push/pull
     // Protected: all other routes require JWT
     app.use('/api/', jwtAuthMiddleware);
+    // SECURITY FIX: memory routes now behind JWT (was public — HMAC alone is insufficient)
+    app.use('/api/memory', memory_1.default); // org memory, collab sessions, push/pull
     // SECURITY FIX: Chat routes now behind JWT — sender bound from token
     app.post('/api/chat/send', security_1.rateLimiter.message, chat_1.chatRouter);
     app.use('/api/chat', chat_1.chatRouter);
@@ -304,10 +304,10 @@ function createServer() {
     app.use((_req, res) => {
         res.status(404).json({ error: 'Not found' });
     });
-    // Error handler
+    // Error handler — SECURITY: never leak internal error details to client
     app.use((err, _req, res, _next) => {
         console.error('[hub] Unhandled error:', err);
-        res.status(500).json({ error: err.message || 'Internal server error', code: 'INTERNAL_ERROR' });
+        res.status(500).json({ error: 'Internal server error', code: 'INTERNAL_ERROR' });
     });
     // Initialize event-trace integration
     (0, event_integration_1.initEventIntegration)();

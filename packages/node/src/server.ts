@@ -305,6 +305,11 @@ export function createServer(identity: NodeIdentity, config: JackClawConfig, cha
   // ── Watchdog Heartbeat (every 60s) ────────────────────────────────────────────
   const hubUrl = config.hubUrl
   if (hubUrl) {
+    // SECURITY: include JWT token in heartbeat to prevent nodeId spoofing
+    const hubToken = (config as any).hubToken ?? process.env.HUB_TOKEN ?? ''
+    if (!hubToken) {
+      console.warn('[server] WARNING: HUB_TOKEN not set — heartbeat will be sent without auth. Set hubToken in config or HUB_TOKEN env var.')
+    }
     const heartbeatInterval = setInterval(() => {
       const metrics = {
         memUsage: process.memoryUsage().heapUsed,
@@ -316,9 +321,16 @@ export function createServer(identity: NodeIdentity, config: JackClawConfig, cha
       const body = JSON.stringify({ nodeId: identity.nodeId, metrics })
       const url = new URL('/api/watchdog/heartbeat', hubUrl)
       const mod = url.protocol === 'https:' ? require('https') : require('http')
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'Content-Length': String(Buffer.byteLength(body)),
+      }
+      if (hubToken) {
+        headers['Authorization'] = `Bearer ${hubToken}`
+      }
       const req = mod.request(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+        headers,
       }, (res: any) => { res.resume() })
       req.on('error', () => { /* silent — hub may be down */ })
       req.end(body)

@@ -33,7 +33,7 @@ import groupsRoute from './routes/groups'
 import federationRoute from './routes/federation'
 import receiptRoute from './routes/receipt'
 import traceRoute from './routes/trace'
-import healthRoute from './routes/health'
+import healthRoute, { protectedHealthRouter } from './routes/health'
 import agentCardRoute from './routes/agent-card'
 import auditRoute from './routes/audit'
 import learningRoute from './routes/learning'
@@ -235,13 +235,9 @@ export function createServer(): Application {
   // /register and GET / moved behind JWT (defense in depth)
   app.post('/api/humans/message', humansRoute)
 
-  // Public: receipt delivery/read status (nodes authenticate via nodeId in body)
-  app.use('/api/receipt', receiptRoute)
-
   // Public: inter-hub federation protocol (hub-to-hub)
   // NOTE: blacklist routes inside federationRoute enforce JWT + RBAC internally
   app.use('/api/federation', federationRoute)
-  app.use('/api/agent', agentSessionRoute)
 
   // Public: user profile pages (HTML, no JWT)
   app.use('/', profilePageRoute)
@@ -260,6 +256,13 @@ export function createServer(): Application {
   // SECURITY FIX: Human account management behind JWT (register + list)
   // /humans/message stays public (humanToken auth)
   app.use('/api/humans', humansRoute)
+
+  // SECURITY FIX: Receipt + agent-session behind JWT (were in public zone)
+  app.use('/api/receipt', receiptRoute)
+  app.use('/api/agent', agentSessionRoute)
+
+  // SECURITY FIX: Health detailed + metrics behind JWT (public /health only returns {status:'ok'})
+  app.use('/health', protectedHealthRouter)
 
   // Tenant context: extract tenantId/orgId from JWT or headers for multi-tenant routes
   app.use('/api/tenants', tenantContextMiddleware({ requireTenant: false }), tenantRouter)

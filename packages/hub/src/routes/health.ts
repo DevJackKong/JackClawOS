@@ -1,35 +1,51 @@
 /**
  * Hub Health & Observability API
  *
- * GET /health              → basic health check
- * GET /health/detailed     → full system status
- * GET /health/metrics      → prometheus-style metrics
+ * GET /health              → basic health check (public, minimal)
+ * GET /health/detailed     → full system status (JWT required)
+ * GET /health/metrics      → prometheus-style metrics (JWT required)
  */
 
 import { Router, Request, Response } from 'express'
 import os from 'os'
+import jwt from 'jsonwebtoken'
+import { JWT_SECRET } from '../server'
 import { chatWorker } from '../chat-worker'
 import { offlineQueue } from '../store/offline-queue'
 import { messageStore } from '../store/message-store'
 
-const router = Router()
 const startTime = Date.now()
 
-// ─── Basic health check ───────────────────────────────────────────────────────
+// ─── JWT helper for protected health endpoints ───────────────────────────────
+function requireAuth(req: Request, res: Response): boolean {
+  const authHeader = req.headers.authorization
+  if (!authHeader?.startsWith('Bearer ')) {
+    res.status(401).json({ error: 'Unauthorized' })
+    return false
+  }
+  try {
+    jwt.verify(authHeader.slice(7), JWT_SECRET, { algorithms: ['HS256'] })
+    return true
+  } catch {
+    res.status(401).json({ error: 'Invalid or expired token' })
+    return false
+  }
+}
 
-router.get('/', (_req: Request, res: Response) => {
-  res.json({
-    status: 'ok',
-    service: 'jackclaw-hub',
-    version: '0.2.0',
-    uptime: Math.round((Date.now() - startTime) / 1000),
-    ts: Date.now(),
-  })
+// ─── Public health check (minimal info) ───────────────────────────────────────
+
+export const publicHealthRouter = Router()
+
+publicHealthRouter.get('/', (_req: Request, res: Response) => {
+  res.json({ status: 'ok' })
 })
 
-// ─── Detailed system status ───────────────────────────────────────────────────
+// ─── Protected health routes (JWT required) ──────────────────────────────────
 
-router.get('/detailed', (_req: Request, res: Response) => {
+export const protectedHealthRouter = Router()
+
+protectedHealthRouter.get('/detailed', (req: Request, res: Response) => {
+  if (!requireAuth(req, res)) return
   const chatStats = chatWorker.getStats()
   const storeStats = messageStore.getStats()
   const mem = process.memoryUsage()
@@ -40,7 +56,6 @@ router.get('/detailed', (_req: Request, res: Response) => {
     uptime: Math.round((Date.now() - startTime) / 1000),
     ts: Date.now(),
 
-    // Chat worker stats
     chat: {
       connections: chatStats.connections,
       queueDepth: chatStats.queueDepth,
@@ -51,18 +66,15 @@ router.get('/detailed', (_req: Request, res: Response) => {
       avgLatencyMs: chatStats.avgLatencyMs,
     },
 
-    // Message store stats
     store: {
       totalMessages: storeStats.totalMessages,
       totalThreads: storeStats.totalThreads,
     },
 
-    // Offline queue
     offlineQueue: {
       totalPending: offlineQueue.totalPending(),
     },
 
-    // System resources
     system: {
       platform: os.platform(),
       arch: os.arch(),
@@ -73,7 +85,6 @@ router.get('/detailed', (_req: Request, res: Response) => {
       freeMem: Math.round(os.freemem() / 1024 / 1024),
     },
 
-    // Process memory
     memory: {
       rss: Math.round(mem.rss / 1024 / 1024),
       heapUsed: Math.round(mem.heapUsed / 1024 / 1024),
@@ -83,9 +94,8 @@ router.get('/detailed', (_req: Request, res: Response) => {
   })
 })
 
-// ─── Metrics (simple key=value format) ────────────────────────────────────────
-
-router.get('/metrics', (_req: Request, res: Response) => {
+protectedHealthRouter.get('/metrics', (req: Request, res: Response) => {
+  if (!requireAuth(req, res)) return
   const chatStats = chatWorker.getStats()
   const storeStats = messageStore.getStats()
   const mem = process.memoryUsage()
@@ -110,4 +120,5 @@ router.get('/metrics', (_req: Request, res: Response) => {
   res.type('text/plain').send(lines.join('\n') + '\n')
 })
 
-export default router
+// Default export for backward compat (public only)
+export default publicHealthRouter

@@ -5,6 +5,7 @@
 import { Router, Request, Response } from 'express'
 import jwt from 'jsonwebtoken'
 import crypto from 'crypto'
+import { URL } from 'url'
 import { registerNode, nodeExists } from '../store/nodes'
 import { getHubKeys, JWT_SECRET } from '../server'
 
@@ -30,6 +31,32 @@ const NODE_ID_RE = /^[a-zA-Z0-9._@-]{1,64}$/
 const MAX_NAME_LEN = 128
 const MAX_ROLE_LEN = 64
 const MAX_KEY_LEN = 8192 // PEM public key
+
+// ─── SSRF protection for callbackUrl ─────────────────────────────────────────
+// Block internal/private IPs to prevent SSRF via channels/ask aggregation
+const PRIVATE_IP_RE = /^(127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|0\.|169\.254\.|::1|fc|fd|fe80)/i
+
+function validateCallbackUrl(url: string | undefined): string | undefined {
+  if (!url || typeof url !== 'string') return undefined
+  try {
+    const parsed = new URL(url)
+    // Only allow http/https
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+      throw new Error('callbackUrl must use http or https')
+    }
+    // Block private/internal IPs
+    if (PRIVATE_IP_RE.test(parsed.hostname) || parsed.hostname === 'localhost') {
+      throw new Error('callbackUrl cannot point to private/internal addresses')
+    }
+    // Block non-standard dangerous ports
+    if (parsed.port && parseInt(parsed.port) < 1024 && parseInt(parsed.port) !== 80 && parseInt(parsed.port) !== 443) {
+      throw new Error('callbackUrl uses restricted port')
+    }
+    return parsed.origin + parsed.pathname.replace(/\/+$/, '')
+  } catch (e: any) {
+    throw new Error(`Invalid callbackUrl: ${e.message}`)
+  }
+}
 
 router.post('/', (req: Request, res: Response): void => {
   const { nodeId, name, role, publicKey, callbackUrl, inviteCode } = req.body as {
@@ -73,7 +100,16 @@ router.post('/', (req: Request, res: Response): void => {
       return
     }
 
-    const node = registerNode({ nodeId, name, role, publicKey, callbackUrl })
+    // SECURITY: validate callbackUrl to prevent SSRF
+    let sanitizedCallbackUrl: string | undefined
+    try {
+      sanitizedCallbackUrl = validateCallbackUrl(callbackUrl)
+    } catch (e: any) {
+      res.status(400).json({ error: e.message, code: 'VALIDATION_ERROR' })
+      return
+    }
+
+    const node = registerNode({ nodeId, name, role, publicKey, callbackUrl: sanitizedCallbackUrl })
 
     const token = jwt.sign(
       { nodeId: node.nodeId, role: node.role },

@@ -13,9 +13,12 @@ const express_1 = require("express");
 const http_1 = __importDefault(require("http"));
 const nodes_js_1 = require("../store/nodes.js");
 const server_js_1 = require("../server.js");
+const rbac_helpers_1 = require("./rbac-helpers");
 const router = (0, express_1.Router)();
-// GET /providers — aggregate LLM provider lists from all registered nodes
-router.get('/providers', (0, server_js_1.asyncHandler)(async (_req, res) => {
+// GET /providers — SECURITY: admin only (exposes node topology + callbackUrls internally)
+router.get('/providers', (0, server_js_1.asyncHandler)(async (req, res) => {
+    if (!(0, rbac_helpers_1.requireAdmin)(req, res))
+        return;
     const nodes = (0, nodes_js_1.getAllNodes)().filter(n => n.callbackUrl);
     const results = await Promise.all(nodes.map(async (node) => {
         try {

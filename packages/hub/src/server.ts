@@ -305,6 +305,7 @@ export function createServer(): Application {
   app.use('/api/chat-context', chatContextRoute)
   app.use('/api/task-state', taskStateRoute)
   app.use('/api/approvals', approvalRoute)
+  // SECURITY FIX: tunnel routes behind JWT (was public — open reverse proxy + tunnel enumeration)
   app.use('/tunnel', tunnelRoute)             // WS /tunnel/ws; ANY /tunnel/:nodeId/* — reverse proxy
 
   // SPA fallback — serve dashboard index.html for all non-API GET requests

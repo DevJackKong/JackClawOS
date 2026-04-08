@@ -285,6 +285,7 @@ function createServer() {
     app.use('/api/chat-context', chat_context_1.default);
     app.use('/api/task-state', task_state_1.default);
     app.use('/api/approvals', approval_1.default);
+    // SECURITY FIX: tunnel routes behind JWT (was public — open reverse proxy + tunnel enumeration)
     app.use('/tunnel', tunnel_1.default); // WS /tunnel/ws; ANY /tunnel/:nodeId/* — reverse proxy
     // SPA fallback — serve dashboard index.html for all non-API GET requests
     app.get('*', (req, res, next) => {

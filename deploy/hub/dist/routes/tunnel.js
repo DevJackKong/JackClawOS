@@ -19,7 +19,20 @@ exports.getConnectedTunnels = getConnectedTunnels;
 const express_1 = require("express");
 const ws_1 = require("ws");
 const crypto_1 = __importDefault(require("crypto"));
+const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
+const server_1 = require("../server");
 const router = (0, express_1.Router)();
+// ─── JWT verification helper for tunnel routes ───────────────────────────────
+function verifyTunnelJwt(authHeader) {
+    if (!authHeader?.startsWith('Bearer '))
+        return null;
+    try {
+        return jsonwebtoken_1.default.verify(authHeader.slice(7), server_1.JWT_SECRET, { algorithms: ['HS256'] });
+    }
+    catch {
+        return null;
+    }
+}
 // ─── State ────────────────────────────────────────────────────────────────────
 /** nodeId → active WebSocket */
 const tunnels = new Map();
@@ -36,6 +49,22 @@ function attachTunnelWss(server, hubUrl) {
     server.on('upgrade', (req, socket, head) => {
         if (!req.url?.startsWith('/tunnel/ws'))
             return;
+        // SECURITY: verify JWT on WebSocket upgrade
+        const params = new URL(req.url, 'http://hub').searchParams;
+        const token = params.get('token') || req.headers.authorization?.replace('Bearer ', '');
+        if (!token) {
+            socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+            socket.destroy();
+            return;
+        }
+        try {
+            jsonwebtoken_1.default.verify(token, server_1.JWT_SECRET, { algorithms: ['HS256'] });
+        }
+        catch {
+            socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+            socket.destroy();
+            return;
+        }
         wss.handleUpgrade(req, socket, head, (ws) => {
             wss.emit('connection', ws, req);
         });
@@ -116,15 +145,37 @@ function forwardToNode(nodeId, method, path, headers, body) {
     });
 }
 // ─── Express Routes ───────────────────────────────────────────────────────────
-// List active tunnels (no auth for monitoring/debug)
-router.get('/', (_req, res) => {
+// SECURITY: List active tunnels — admin only
+router.get('/', (req, res) => {
+    const payload = verifyTunnelJwt(req.headers.authorization);
+    if (!payload) {
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
+    }
+    const role = payload.role?.toLowerCase();
+    if (role !== 'admin' && role !== 'ceo' && role !== 'owner') {
+        res.status(403).json({ error: 'Forbidden — admin only' });
+        return;
+    }
     res.json({ tunnels: getConnectedTunnels() });
 });
-// Forward any request to the node — mounted at /tunnel, so path is /:nodeId[/rest]
+// SECURITY: Forward requests — require JWT, only forward to your own node or admin
 router.all('/:nodeId', proxyHandler);
 router.all('/:nodeId/*', proxyHandler);
 async function proxyHandler(req, res) {
+    // SECURITY: require JWT — only own node or admin can proxy
+    const payload = verifyTunnelJwt(req.headers.authorization);
+    if (!payload) {
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
+    }
     const { nodeId } = req.params;
+    const role = payload.role?.toLowerCase();
+    const isAdmin = role === 'admin' || role === 'ceo' || role === 'owner';
+    if (payload.nodeId !== nodeId && !isAdmin) {
+        res.status(403).json({ error: 'Forbidden — can only proxy to your own node' });
+        return;
+    }
     // Reconstruct full path including query string
     const rawPath = req.url; // relative to mount point; starts with /:nodeId
     const nodePrefix = `/${nodeId}`;

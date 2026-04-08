@@ -8,11 +8,13 @@ import { Router, Request, Response } from 'express'
 import http from 'http'
 import { getAllNodes, getNode } from '../store/nodes.js'
 import { asyncHandler } from '../server.js'
+import { requireAdmin, requireAuth } from './rbac-helpers'
 
 const router = Router()
 
-// GET /providers — aggregate LLM provider lists from all registered nodes
-router.get('/providers', asyncHandler(async (_req: Request, res: Response) => {
+// GET /providers — SECURITY: admin only (exposes node topology + callbackUrls internally)
+router.get('/providers', asyncHandler(async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return
   const nodes = getAllNodes().filter(n => n.callbackUrl)
   const results = await Promise.all(nodes.map(async (node) => {
     try {

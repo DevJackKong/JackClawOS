@@ -9,6 +9,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const crypto_1 = __importDefault(require("crypto"));
+const url_1 = require("url");
 const nodes_1 = require("../store/nodes");
 const server_1 = require("../server");
 const router = (0, express_1.Router)();
@@ -33,6 +34,32 @@ const NODE_ID_RE = /^[a-zA-Z0-9._@-]{1,64}$/;
 const MAX_NAME_LEN = 128;
 const MAX_ROLE_LEN = 64;
 const MAX_KEY_LEN = 8192; // PEM public key
+// ─── SSRF protection for callbackUrl ─────────────────────────────────────────
+// Block internal/private IPs to prevent SSRF via channels/ask aggregation
+const PRIVATE_IP_RE = /^(127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|0\.|169\.254\.|::1|fc|fd|fe80)/i;
+function validateCallbackUrl(url) {
+    if (!url || typeof url !== 'string')
+        return undefined;
+    try {
+        const parsed = new url_1.URL(url);
+        // Only allow http/https
+        if (!['http:', 'https:'].includes(parsed.protocol)) {
+            throw new Error('callbackUrl must use http or https');
+        }
+        // Block private/internal IPs
+        if (PRIVATE_IP_RE.test(parsed.hostname) || parsed.hostname === 'localhost') {
+            throw new Error('callbackUrl cannot point to private/internal addresses');
+        }
+        // Block non-standard dangerous ports
+        if (parsed.port && parseInt(parsed.port) < 1024 && parseInt(parsed.port) !== 80 && parseInt(parsed.port) !== 443) {
+            throw new Error('callbackUrl uses restricted port');
+        }
+        return parsed.origin + parsed.pathname.replace(/\/+$/, '');
+    }
+    catch (e) {
+        throw new Error(`Invalid callbackUrl: ${e.message}`);
+    }
+}
 router.post('/', (req, res) => {
     const { nodeId, name, role, publicKey, callbackUrl, inviteCode } = req.body;
     if (!nodeId || !name || !role || !publicKey) {
@@ -63,7 +90,16 @@ router.post('/', (req, res) => {
             res.status(403).json({ error: 'Valid invite code required for new node registration', code: 'INVITE_REQUIRED' });
             return;
         }
-        const node = (0, nodes_1.registerNode)({ nodeId, name, role, publicKey, callbackUrl });
+        // SECURITY: validate callbackUrl to prevent SSRF
+        let sanitizedCallbackUrl;
+        try {
+            sanitizedCallbackUrl = validateCallbackUrl(callbackUrl);
+        }
+        catch (e) {
+            res.status(400).json({ error: e.message, code: 'VALIDATION_ERROR' });
+            return;
+        }
+        const node = (0, nodes_1.registerNode)({ nodeId, name, role, publicKey, callbackUrl: sanitizedCallbackUrl });
         const token = jsonwebtoken_1.default.sign({ nodeId: node.nodeId, role: node.role }, server_1.JWT_SECRET, { expiresIn: '30d' });
         const { publicKey: hubPublicKey } = (0, server_1.getHubKeys)();
         res.status(existing ? 200 : 201).json({

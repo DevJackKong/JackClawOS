@@ -21,6 +21,8 @@ export interface UserRecord {
   handle: string
   displayName: string
   email?: string
+  tenantId?: string
+  orgId?: string
   passwordHash: string
   passwordSalt: string
   agentNodeId: string      // corresponding Agent identity in directory
@@ -99,6 +101,8 @@ export class UserStore {
     password: string,
     displayName: string,
     email?: string,
+    tenantId?: string,
+    orgId?: string,
   ): Promise<{ token: string; user: PublicUser }> {
     const h = this.normalizeHandle(handle)
     if (h.length < 3) throw Object.assign(new Error('handle 至少 3 个字符'), { status: 400 })
@@ -115,6 +119,8 @@ export class UserStore {
       handle: h,
       displayName: displayName.trim().slice(0, 64),
       email,
+      tenantId,
+      orgId,
       passwordHash,
       passwordSalt: salt,
       agentNodeId,
@@ -262,6 +268,9 @@ export class UserStore {
         visibility: 'contacts',
         createdAt: user.createdAt,
         lastSeen: user.createdAt,
+      }
+      if (user.tenantId) {
+        ;(profile as AgentProfile & { tenantId?: string }).tenantId = user.tenantId
       }
       dir[handle] = profile
       saveJSON(DIRECTORY_FILE, dir)

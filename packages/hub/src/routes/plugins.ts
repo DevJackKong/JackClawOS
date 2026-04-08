@@ -1,35 +1,97 @@
-/**
- * Plugin Management API
- *
- * GET  /api/plugins         → list loaded plugins
- * GET  /api/plugins/stats   → plugin system stats
- * POST /api/plugins/events  → list recent events
- */
-
 import { Router, Request, Response } from 'express'
-import { pluginManager } from '../plugin-manager'
-import { eventBus } from '../event-bus'
+import { pluginSystem } from '../plugin-system'
+import { asyncHandler } from '../server'
 
 const router = Router()
 
-// GET /api/plugins
-router.get('/', (_req: Request, res: Response) => {
+/**
+ * GET /api/plugins
+ * 列出所有已注册插件 / List all registered plugins
+ */
+router.get('/', asyncHandler(async (_req: Request, res: Response) => {
+  const plugins = pluginSystem.listPlugins()
+
   res.json({
-    plugins: pluginManager.list(),
-    stats: pluginManager.getStats(),
+    success: true,
+    data: plugins,
   })
-})
+}))
 
-// GET /api/plugins/stats
-router.get('/stats', (_req: Request, res: Response) => {
-  res.json(pluginManager.getStats())
-})
+/**
+ * GET /api/plugins/:id
+ * 获取单个插件详情 / Get a single plugin detail
+ */
+router.get('/:id', asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params
+  const plugin = pluginSystem.getPlugin(id)
 
-// GET /api/plugins/events
-router.get('/events', (req: Request, res: Response) => {
-  const limit = parseInt(req.query.limit as string) || 50
-  const events = eventBus.getRecentEvents(limit)
-  res.json({ events, count: events.length })
-})
+  if (!plugin) {
+    res.status(404).json({
+      success: false,
+      error: 'Plugin not found',
+      code: 'PLUGIN_NOT_FOUND',
+    })
+    return
+  }
+
+  res.json({
+    success: true,
+    data: plugin,
+  })
+}))
+
+/**
+ * POST /api/plugins/:id/enable
+ * 启用插件 / Enable plugin
+ */
+router.post('/:id/enable', asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params
+  const plugin = pluginSystem.enable(id)
+
+  res.json({
+    success: true,
+    message: 'Plugin enabled successfully',
+    data: plugin,
+  })
+}))
+
+/**
+ * POST /api/plugins/:id/disable
+ * 禁用插件 / Disable plugin
+ */
+router.post('/:id/disable', asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params
+  const plugin = pluginSystem.disable(id)
+
+  res.json({
+    success: true,
+    message: 'Plugin disabled successfully',
+    data: plugin,
+  })
+}))
+
+/**
+ * DELETE /api/plugins/:id
+ * 卸载插件 / Unregister plugin
+ */
+router.delete('/:id', asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params
+  const removed = pluginSystem.unregister(id)
+
+  if (!removed) {
+    res.status(404).json({
+      success: false,
+      error: 'Plugin not found',
+      code: 'PLUGIN_NOT_FOUND',
+    })
+    return
+  }
+
+  res.json({
+    success: true,
+    message: 'Plugin unregistered successfully',
+    data: { id, removed },
+  })
+}))
 
 export default router

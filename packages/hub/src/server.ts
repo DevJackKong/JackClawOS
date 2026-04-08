@@ -35,7 +35,13 @@ import receiptRoute from './routes/receipt'
 import traceRoute from './routes/trace'
 import healthRoute from './routes/health'
 import agentCardRoute from './routes/agent-card'
+import auditRoute from './routes/audit'
+import riskRoute from './routes/risk'
 import pluginsRoute from './routes/plugins'
+import contactsRoute from './routes/contacts'
+import dashboardRoute from './routes/dashboard'
+import notificationsRoute from './routes/notifications'
+import configRoute from './routes/config'
 import profilePageRoute from './routes/profile-page'
 import moltbookRoute from './routes/moltbook'
 import tasksRoute from './routes/tasks'
@@ -43,9 +49,24 @@ import channelsRoute from './routes/channels'
 import pushRoute from './routes/push'
 import searchRoute from './routes/search'
 import presenceRoute from './routes/presence'
+import interactionTraceRoute from './routes/interaction-trace'
+import chatContextRoute from './routes/chat-context'
+import taskStateRoute from './routes/task-state'
+import approvalRoute from './routes/approval'
 import { initFederationManager } from './federation'
+import { initEventIntegration } from './services/event-integration'
 import { JWTPayload } from './types'
 import tunnelRoute from './routes/tunnel'
+import agentSessionRoute from './routes/agent-session'
+import { tenantContextMiddleware } from './middleware/tenant-context'
+import { auditLoggerMiddleware } from './middleware/audit-logger'
+import { riskCheckMiddleware } from './middleware/risk-check'
+import tenantRouter from './routes/tenant'
+import orgRouter from './routes/org'
+import workspaceRouter from './routes/workspace'
+import membersRouter from './routes/members'
+import rolesRouter from './routes/roles'
+import { initDefaultRules } from './services/risk-engine'
 
 // ─── Hub Configuration ────────────────────────────────────────────────────────
 
@@ -218,6 +239,7 @@ export function createServer(): Application {
 
   // Public: inter-hub federation protocol (hub-to-hub, no JWT)
   app.use('/api/federation', federationRoute)
+  app.use('/api/agent', agentSessionRoute)
 
   // Public: user profile pages (HTML, no JWT)
   app.use('/', profilePageRoute)
@@ -227,6 +249,13 @@ export function createServer(): Application {
 
   // Protected: all other routes require JWT
   app.use('/api/', jwtAuthMiddleware)
+
+  // Tenant context: extract tenantId/orgId from JWT or headers for multi-tenant routes
+  app.use('/api/tenants', tenantContextMiddleware({ requireTenant: false }), tenantRouter)
+  app.use('/api/orgs', tenantContextMiddleware({ requireTenant: true }), orgRouter)
+  app.use('/api/workspaces', tenantContextMiddleware({ requireTenant: true }), workspaceRouter)
+  app.use('/api/members', tenantContextMiddleware({ requireTenant: true }), membersRouter)
+  app.use('/api/roles', tenantContextMiddleware({ requireTenant: true }), rolesRouter)
   app.use('/api/reports', reportRoute)        // POST / — submit node daily report
   app.use('/api/nodes', nodesRoute)           // GET / — list registered nodes; POST /:nodeId/workload
   app.use('/api/summary', summaryRoute)       // GET / — daily digest summary
@@ -249,7 +278,17 @@ export function createServer(): Application {
   app.use('/api/moltbook', moltbookRoute)     // Moltbook social integration
   app.use('/api/tasks', tasksRoute)           // async task queue: submit, status, cancel
   app.use('/api/presence', presenceRoute)     // GET /:handle, GET /online — presence queries
+  app.use('/api/audit', auditRoute)
+  app.use('/api/risk', riskRoute)
   app.use('/api/plugins', pluginsRoute)       // GET / — list plugins; GET /stats; GET /events
+  app.use('/api/contacts', contactsRoute)
+  app.use('/api/dashboard', dashboardRoute)
+  app.use('/api/notifications', notificationsRoute)
+  app.use('/api/config', configRoute)
+  app.use('/api/traces', interactionTraceRoute)
+  app.use('/api/chat-context', chatContextRoute)
+  app.use('/api/task-state', taskStateRoute)
+  app.use('/api/approvals', approvalRoute)
   app.use('/tunnel', tunnelRoute)             // WS /tunnel/ws; ANY /tunnel/:nodeId/* — reverse proxy
 
   // SPA fallback — serve dashboard index.html for all non-API GET requests
@@ -275,6 +314,10 @@ export function createServer(): Application {
     console.error('[hub] Unhandled error:', err)
     res.status(500).json({ error: err.message || 'Internal server error', code: 'INTERNAL_ERROR' })
   })
+
+  // Initialize event-trace integration
+  initEventIntegration()
+  initDefaultRules()
 
   return app
 }

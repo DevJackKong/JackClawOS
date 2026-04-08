@@ -10,6 +10,7 @@ export * from './social'
 export * from './receipt'
 export * from './federation'
 export * from './concierge'
+export * from './agent-session'
 // Unified identity model (branded types) — use UI_ prefix to avoid conflict with identity.ts
 export {
   type HumanId,

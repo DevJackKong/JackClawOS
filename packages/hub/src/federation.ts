@@ -261,15 +261,31 @@ export class FederationManager {
       throw new Error(`Rejected message from blacklisted hub: ${envelope.fromHub}`)
     }
 
-    // Update peer's lastSeen
+    // SECURITY: Verify sender is a known peer with a stored public key
     const peer = this.store.peers[envelope.fromHub]
-    if (peer) {
-      peer.lastSeen = Date.now()
-      peer.status = 'online'
-      saveStore(this.store)
+    if (!peer) {
+      throw new Error(`Unknown hub: ${envelope.fromHub} — handshake required before sending messages`)
     }
 
-    console.log(`[federation] Received from ${envelope.fromHub}: ${envelope.message.fromAgent} → ${envelope.message.toAgent}`)
+    // SECURITY: Verify hubSignature (protocol-defined: id + fromHub + toHub + message.id)
+    if (peer.publicKey) {
+      if (!envelope.hubSignature) {
+        throw new Error(`Missing hubSignature from ${envelope.fromHub}`)
+      }
+      const sigInput = `${envelope.id}${envelope.fromHub}${envelope.toHub}${envelope.message?.id ?? ''}`
+      if (!this._verify(sigInput, envelope.hubSignature, peer.publicKey)) {
+        throw new Error(`Invalid hubSignature from hub: ${envelope.fromHub}`)
+      }
+    } else {
+      console.warn(`[federation] WARNING: No public key stored for ${envelope.fromHub} — cannot verify hubSignature`)
+    }
+
+    // Update peer's lastSeen
+    peer.lastSeen = Date.now()
+    peer.status = 'online'
+    saveStore(this.store)
+
+    console.log(`[federation] Verified message from ${envelope.fromHub}: ${envelope.message.fromAgent} → ${envelope.message.toAgent}`)
     return envelope.message
   }
 

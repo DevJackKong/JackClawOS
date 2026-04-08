@@ -1,21 +1,44 @@
 // POST /api/register - Node registration
-// Accepts: nodeId, name, role, publicKey
+// Accepts: nodeId, name, role, publicKey, inviteCode (required when HUB_INVITE_CODE is set)
 // Returns: hubPublicKey, token (JWT)
 
 import { Router, Request, Response } from 'express'
 import jwt from 'jsonwebtoken'
+import crypto from 'crypto'
 import { registerNode, nodeExists } from '../store/nodes'
 import { getHubKeys, JWT_SECRET } from '../server'
 
 const router = Router()
 
+// ─── Invite code protection ──────────────────────────────────────────────────
+// Set HUB_INVITE_CODE env to require an invite code for new node registration.
+// Existing nodes (re-registration / key rotation) are allowed without invite code.
+const HUB_INVITE_CODE = process.env.HUB_INVITE_CODE?.trim() || ''
+
+function verifyInviteCode(code: string | undefined): boolean {
+  if (!HUB_INVITE_CODE) return true // no invite code configured → open registration
+  if (!code || typeof code !== 'string') return false
+  // Constant-time comparison to prevent timing attacks
+  const a = Buffer.from(code.trim())
+  const b = Buffer.from(HUB_INVITE_CODE)
+  if (a.length !== b.length) return false
+  return crypto.timingSafeEqual(a, b)
+}
+
+// ─── Input validation ────────────────────────────────────────────────────────
+const NODE_ID_RE = /^[a-zA-Z0-9._@-]{1,64}$/
+const MAX_NAME_LEN = 128
+const MAX_ROLE_LEN = 64
+const MAX_KEY_LEN = 8192 // PEM public key
+
 router.post('/', (req: Request, res: Response): void => {
-  const { nodeId, name, role, publicKey, callbackUrl } = req.body as {
+  const { nodeId, name, role, publicKey, callbackUrl, inviteCode } = req.body as {
     nodeId?: string
     name?: string
     role?: string
     publicKey?: string
     callbackUrl?: string
+    inviteCode?: string
   }
 
   if (!nodeId || !name || !role || !publicKey) {
@@ -23,14 +46,32 @@ router.post('/', (req: Request, res: Response): void => {
     return
   }
 
-  // Basic validation
-  if (typeof nodeId !== 'string' || nodeId.length > 64) {
-    res.status(400).json({ error: 'Invalid nodeId', code: 'VALIDATION_ERROR' })
+  // Strict input validation
+  if (typeof nodeId !== 'string' || !NODE_ID_RE.test(nodeId)) {
+    res.status(400).json({ error: 'Invalid nodeId: must be 1-64 alphanumeric/._@- chars', code: 'VALIDATION_ERROR' })
+    return
+  }
+  if (typeof name !== 'string' || name.length > MAX_NAME_LEN) {
+    res.status(400).json({ error: `name must be ≤${MAX_NAME_LEN} chars`, code: 'VALIDATION_ERROR' })
+    return
+  }
+  if (typeof role !== 'string' || role.length > MAX_ROLE_LEN) {
+    res.status(400).json({ error: `role must be ≤${MAX_ROLE_LEN} chars`, code: 'VALIDATION_ERROR' })
+    return
+  }
+  if (typeof publicKey !== 'string' || publicKey.length > MAX_KEY_LEN) {
+    res.status(400).json({ error: 'publicKey too large', code: 'VALIDATION_ERROR' })
     return
   }
 
   try {
     const existing = nodeExists(nodeId)
+
+    // New registration requires invite code (if configured)
+    if (!existing && !verifyInviteCode(inviteCode)) {
+      res.status(403).json({ error: 'Valid invite code required for new node registration', code: 'INVITE_REQUIRED' })
+      return
+    }
 
     const node = registerNode({ nodeId, name, role, publicKey, callbackUrl })
 

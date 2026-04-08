@@ -17,6 +17,19 @@ import os from 'os'
 
 const router = Router()
 
+// ─── Input sanitization ──────────────────────────────────────────────────────
+const SAFE_ID_RE = /^[a-zA-Z0-9._@-]{1,128}$/
+
+/** Validate nodeId to prevent path traversal */
+function sanitizeNodeId(raw: string): string | null {
+  if (!raw || typeof raw !== 'string') return null
+  const trimmed = raw.trim()
+  if (!SAFE_ID_RE.test(trimmed)) return null
+  // Double-check no path separators
+  if (trimmed.includes('/') || trimmed.includes('\\') || trimmed.includes('..')) return null
+  return trimmed
+}
+
 // ─── 共享技能存储（Hub 级别）──────────────────────────────────────────────────
 
 const HUB_SKILLS_PATH = path.join(os.homedir(), '.jackclaw', 'hub-skills.json')
@@ -138,9 +151,15 @@ router.get('/skills/:id', (req: Request, res: Response) => {
  * Body: { nodeId, skills: [{ name, description, code, tags, successRate, usageCount }] }
  */
 router.post('/skills/share', (req: Request, res: Response) => {
-  const { nodeId, skills } = req.body
-  if (!nodeId || !Array.isArray(skills)) {
+  const { nodeId: rawNodeId, skills } = req.body
+  if (!rawNodeId || !Array.isArray(skills)) {
     res.status(400).json({ error: 'Missing nodeId or skills array' })
+    return
+  }
+
+  const nodeId = sanitizeNodeId(rawNodeId)
+  if (!nodeId) {
+    res.status(400).json({ error: 'Invalid nodeId format' })
     return
   }
 
@@ -182,10 +201,10 @@ const REFLEXION_DIR = path.join(os.homedir(), '.jackclaw', 'reflexion')
  * GET /api/reflexion?nodeId=xxx&limit=20 — 查看反思记录
  */
 router.get('/reflexion', (req: Request, res: Response) => {
-  const nodeId = String(req.query.nodeId || '')
+  const rawNodeId = String(req.query.nodeId || '')
   const limit = Math.min(Number(req.query.limit) || 20, 100)
 
-  if (!nodeId) {
+  if (!rawNodeId) {
     // 列出所有节点
     if (!fs.existsSync(REFLEXION_DIR)) {
       res.json({ nodes: [] })
@@ -195,6 +214,12 @@ router.get('/reflexion', (req: Request, res: Response) => {
       fs.statSync(path.join(REFLEXION_DIR, f)).isDirectory()
     )
     res.json({ nodes })
+    return
+  }
+
+  const nodeId = sanitizeNodeId(rawNodeId)
+  if (!nodeId) {
+    res.status(400).json({ error: 'Invalid nodeId format' })
     return
   }
 
@@ -220,9 +245,15 @@ router.get('/reflexion', (req: Request, res: Response) => {
  * GET /api/reflexion/stats?nodeId=xxx — 反思统计
  */
 router.get('/reflexion/stats', (req: Request, res: Response) => {
-  const nodeId = String(req.query.nodeId || '')
-  if (!nodeId) {
+  const rawNodeId = String(req.query.nodeId || '')
+  if (!rawNodeId) {
     res.status(400).json({ error: 'Missing nodeId' })
+    return
+  }
+
+  const nodeId = sanitizeNodeId(rawNodeId)
+  if (!nodeId) {
+    res.status(400).json({ error: 'Invalid nodeId format' })
     return
   }
 

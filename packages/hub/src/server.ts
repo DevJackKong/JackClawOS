@@ -220,8 +220,8 @@ export function createServer(): Application {
   // Agent Card discovery (no auth) — A2A + OpenAgents compatible
   app.use('/.well-known', agentCardRoute)
 
-  // Public: node registration (no JWT required — nodes need a token first)
-  app.use('/api/register', registerRoute)
+  // Public: node registration (invite code required when HUB_INVITE_CODE is set)
+  app.post('/api/register', rateLimiter.register, registerRoute)
 
   // Public: user auth — strict rate limits to prevent brute-force and account flooding
   app.post('/api/auth/login', rateLimiter.login)

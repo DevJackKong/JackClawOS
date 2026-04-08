@@ -13,7 +13,8 @@
 import { Router, Request, Response } from 'express'
 import type { FederationHandshake, FederatedMessage } from '@jackclaw/protocol'
 import { getFederationManager } from '../federation'
-import { getHubKeys } from '../server'
+import { getHubKeys, JWT_SECRET } from '../server'
+import jwt from 'jsonwebtoken'
 
 const router = Router()
 
@@ -131,20 +132,32 @@ router.get('/status', (_req: Request, res: Response) => {
   })
 })
 
-// ─── RBAC helper: require admin/ceo role from JWT ─────────────────────────────
+// ─── RBAC helper: independently verify JWT + require admin/ceo role ───────────
+// Federation routes are in the public zone (no global JWT middleware),
+// so blacklist routes must verify JWT themselves.
 
 function requireAdmin(req: Request, res: Response): boolean {
-  const payload = (req as any).jwtPayload as { role?: string } | undefined
-  if (!payload) {
-    res.status(401).json({ error: 'Unauthorized — JWT required' })
+  const authHeader = req.headers.authorization
+  if (!authHeader?.startsWith('Bearer ')) {
+    res.status(401).json({ error: 'Unauthorized — Bearer token required' })
     return false
   }
-  const role = payload.role?.toLowerCase()
-  if (role !== 'admin' && role !== 'ceo' && role !== 'owner') {
-    res.status(403).json({ error: 'Forbidden — admin/ceo role required' })
+
+  try {
+    const token = authHeader.slice(7)
+    const payload = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] }) as { role?: string; nodeId?: string }
+    ;(req as any).jwtPayload = payload
+
+    const role = payload.role?.toLowerCase()
+    if (role !== 'admin' && role !== 'ceo' && role !== 'owner') {
+      res.status(403).json({ error: 'Forbidden — admin/ceo role required' })
+      return false
+    }
+    return true
+  } catch {
+    res.status(401).json({ error: 'Invalid or expired token' })
     return false
   }
-  return true
 }
 
 // ─── POST /blacklist (PROTECTED: admin/ceo only) ──────────────────────────────

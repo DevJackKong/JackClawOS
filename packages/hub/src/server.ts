@@ -228,10 +228,8 @@ export function createServer(): Application {
   app.post('/api/auth/register', rateLimiter.register)
   app.use('/api/auth', authRoute)
 
-    // Public: ClawChat — only WebSocket and inbox are public (node auth via WS handshake / nodeId)
-  // SECURITY: /send, /threads, /stats moved below JWT middleware
-  app.use('/api/chat/ws', chatRouter)
-  app.use('/api/chat/inbox', chatRouter)
+  // SECURITY: NO chat routes in public zone. All chat goes through JWT.
+  // WebSocket upgrade is handled by attachChatWss() on the HTTP server, not Express.
 
   // Public: Human accounts — humanToken auth (no JWT needed)
   app.use('/api/humans', humansRoute)
@@ -239,13 +237,9 @@ export function createServer(): Application {
   // Public: receipt delivery/read status (nodes authenticate via nodeId in body)
   app.use('/api/receipt', receiptRoute)
 
-  // Public: inter-hub federation — only handshake/message/discover/peers/status are public
-  // SECURITY: blacklist GET/POST/DELETE moved below JWT middleware
-  app.use('/api/federation/handshake', federationRoute)
-  app.use('/api/federation/message', federationRoute)
-  app.use('/api/federation/peers', federationRoute)
-  app.use('/api/federation/discover', federationRoute)
-  app.use('/api/federation/status', federationRoute)
+  // Public: inter-hub federation protocol (hub-to-hub)
+  // NOTE: blacklist routes inside federationRoute enforce JWT + RBAC internally
+  app.use('/api/federation', federationRoute)
   app.use('/api/agent', agentSessionRoute)
 
   // Public: user profile pages (HTML, no JWT)
@@ -260,9 +254,7 @@ export function createServer(): Application {
   // SECURITY FIX: Chat routes now behind JWT — sender bound from token
   app.post('/api/chat/send', rateLimiter.message, chatRouter)
   app.use('/api/chat', chatRouter)
-
-  // SECURITY FIX: Federation blacklist behind JWT + RBAC (admin/ceo only)
-  app.use('/api/federation/blacklist', federationRoute)
+  app.use('/api/chat', traceRoute)            // message trace & status
 
   // Tenant context: extract tenantId/orgId from JWT or headers for multi-tenant routes
   app.use('/api/tenants', tenantContextMiddleware({ requireTenant: false }), tenantRouter)

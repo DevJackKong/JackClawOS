@@ -41,7 +41,13 @@ const receipt_1 = __importDefault(require("./routes/receipt"));
 const trace_1 = __importDefault(require("./routes/trace"));
 const health_1 = __importDefault(require("./routes/health"));
 const agent_card_1 = __importDefault(require("./routes/agent-card"));
+const audit_1 = __importDefault(require("./routes/audit"));
+const risk_1 = __importDefault(require("./routes/risk"));
 const plugins_1 = __importDefault(require("./routes/plugins"));
+const contacts_1 = __importDefault(require("./routes/contacts"));
+const dashboard_1 = __importDefault(require("./routes/dashboard"));
+const notifications_1 = __importDefault(require("./routes/notifications"));
+const config_1 = __importDefault(require("./routes/config"));
 const profile_page_1 = __importDefault(require("./routes/profile-page"));
 const moltbook_1 = __importDefault(require("./routes/moltbook"));
 const tasks_1 = __importDefault(require("./routes/tasks"));
@@ -49,8 +55,22 @@ const channels_1 = __importDefault(require("./routes/channels"));
 const push_1 = __importDefault(require("./routes/push"));
 const search_1 = __importDefault(require("./routes/search"));
 const presence_1 = __importDefault(require("./routes/presence"));
+const interaction_trace_1 = __importDefault(require("./routes/interaction-trace"));
+const chat_context_1 = __importDefault(require("./routes/chat-context"));
+const task_state_1 = __importDefault(require("./routes/task-state"));
+const approval_1 = __importDefault(require("./routes/approval"));
+const webhooks_1 = __importDefault(require("./routes/webhooks"));
 const federation_2 = require("./federation");
+const event_integration_1 = require("./services/event-integration");
 const tunnel_1 = __importDefault(require("./routes/tunnel"));
+const agent_session_1 = __importDefault(require("./routes/agent-session"));
+const tenant_context_1 = require("./middleware/tenant-context");
+const tenant_1 = __importDefault(require("./routes/tenant"));
+const org_1 = __importDefault(require("./routes/org"));
+const workspace_1 = __importDefault(require("./routes/workspace"));
+const members_1 = __importDefault(require("./routes/members"));
+const roles_1 = __importDefault(require("./routes/roles"));
+const risk_engine_1 = require("./services/risk-engine");
 // ─── Hub Configuration ────────────────────────────────────────────────────────
 const HUB_DIR = path_1.default.join(process.env.HOME || '~', '.jackclaw', 'hub');
 const KEYS_FILE = path_1.default.join(HUB_DIR, 'keys.json');
@@ -174,14 +194,22 @@ function createServer() {
     app.use('/api/chat', trace_1.default); // message trace & status
     // Public: inter-hub federation protocol (hub-to-hub, no JWT)
     app.use('/api/federation', federation_1.default);
+    app.use('/api/agent', agent_session_1.default);
     // Public: user profile pages (HTML, no JWT)
     app.use('/', profile_page_1.default);
+    // Public: cross-node memory sync uses HMAC-SHA256 (not JWT) — must be before jwtAuthMiddleware
+    app.use('/api/memory', memory_1.default); // org memory, collab sessions, push/pull
     // Protected: all other routes require JWT
     app.use('/api/', jwtAuthMiddleware);
+    // Tenant context: extract tenantId/orgId from JWT or headers for multi-tenant routes
+    app.use('/api/tenants', (0, tenant_context_1.tenantContextMiddleware)({ requireTenant: false }), tenant_1.default);
+    app.use('/api/orgs', (0, tenant_context_1.tenantContextMiddleware)({ requireTenant: true }), org_1.default);
+    app.use('/api/workspaces', (0, tenant_context_1.tenantContextMiddleware)({ requireTenant: true }), workspace_1.default);
+    app.use('/api/members', (0, tenant_context_1.tenantContextMiddleware)({ requireTenant: true }), members_1.default);
+    app.use('/api/roles', (0, tenant_context_1.tenantContextMiddleware)({ requireTenant: true }), roles_1.default);
     app.use('/api/reports', report_1.default); // POST / — submit node daily report
     app.use('/api/nodes', nodes_1.default); // GET / — list registered nodes; POST /:nodeId/workload
     app.use('/api/summary', summary_1.default); // GET / — daily digest summary
-    app.use('/api/memory', memory_1.default); // org memory, collab sessions, push/pull
     app.use('/api/directory', directory_1.default); // GET /lookup/:handle, POST /register, /collab/*
     app.use('/api/watchdog', watchdog_1.default); // heartbeat, status, policy, alerts
     app.use('/api/review', human_review_1.default); // human-in-the-loop review requests
@@ -201,7 +229,18 @@ function createServer() {
     app.use('/api/moltbook', moltbook_1.default); // Moltbook social integration
     app.use('/api/tasks', tasks_1.default); // async task queue: submit, status, cancel
     app.use('/api/presence', presence_1.default); // GET /:handle, GET /online — presence queries
+    app.use('/api/audit', audit_1.default);
+    app.use('/api/risk', risk_1.default);
     app.use('/api/plugins', plugins_1.default); // GET / — list plugins; GET /stats; GET /events
+    app.use('/api/contacts', contacts_1.default);
+    app.use('/api/dashboard', dashboard_1.default);
+    app.use('/api/notifications', notifications_1.default);
+    app.use('/api/webhooks', webhooks_1.default);
+    app.use('/api/config', config_1.default);
+    app.use('/api/traces', interaction_trace_1.default);
+    app.use('/api/chat-context', chat_context_1.default);
+    app.use('/api/task-state', task_state_1.default);
+    app.use('/api/approvals', approval_1.default);
     app.use('/tunnel', tunnel_1.default); // WS /tunnel/ws; ANY /tunnel/:nodeId/* — reverse proxy
     // SPA fallback — serve dashboard index.html for all non-API GET requests
     app.get('*', (req, res, next) => {
@@ -225,6 +264,9 @@ function createServer() {
         console.error('[hub] Unhandled error:', err);
         res.status(500).json({ error: err.message || 'Internal server error', code: 'INTERNAL_ERROR' });
     });
+    // Initialize event-trace integration
+    (0, event_integration_1.initEventIntegration)();
+    (0, risk_engine_1.initDefaultRules)();
     return app;
 }
 //# sourceMappingURL=server.js.map

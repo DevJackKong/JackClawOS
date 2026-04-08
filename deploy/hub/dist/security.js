@@ -67,14 +67,14 @@ exports.rateLimiter = {
         message: { error: 'Too many login attempts. Please wait 1 minute.' },
         skipSuccessfulRequests: false,
     }),
-    /** Register: 5 attempts/min per IP — prevent account flooding */
+    /** Register: 10 attempts/hour per IP — prevent account flooding */
     register: (0, express_rate_limit_1.default)({
-        windowMs: 60_000,
-        max: IS_TEST ? 100_000 : 5,
+        windowMs: 60 * 60_000,
+        max: IS_TEST ? 100_000 : 10,
         standardHeaders: true,
         legacyHeaders: false,
         keyGenerator: makeKeyGenerator('register'),
-        message: { error: 'Too many registration attempts. Please wait 1 minute.' },
+        message: { error: 'Too many registration attempts. Please wait 1 hour.' },
     }),
     /** Message send: 60/min per IP+nodeId */
     message: (0, express_rate_limit_1.default)({
@@ -149,7 +149,7 @@ function cspHeaders() {
         .join(' ');
     const policy = [
         `default-src 'self'`,
-        `script-src 'self'`,
+        `script-src 'self' 'unsafe-inline'`,
         `style-src 'self' 'unsafe-inline'`,
         `img-src 'self' data: blob:`,
         `connect-src 'self' ${wsOrigins} ws://localhost:* wss://localhost:*`,

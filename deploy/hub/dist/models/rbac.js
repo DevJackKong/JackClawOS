@@ -1,0 +1,125 @@
+"use strict";
+// JackClaw Hub - RBAC Models
+// JackClaw Hub - 基于角色的访问控制模型
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.DEFAULT_ROLES = void 0;
+const SYSTEM_TENANT_ID = 'system';
+const SYSTEM_CREATED_AT = 0;
+/**
+ * Default built-in roles / 默认内置角色
+ */
+exports.DEFAULT_ROLES = [
+    {
+        id: 'role_owner',
+        tenantId: SYSTEM_TENANT_ID,
+        name: 'owner',
+        displayName: 'Owner / 拥有者',
+        permissions: ['*'],
+        isSystem: true,
+        createdAt: SYSTEM_CREATED_AT,
+        updatedAt: SYSTEM_CREATED_AT,
+    },
+    {
+        id: 'role_admin',
+        tenantId: SYSTEM_TENANT_ID,
+        name: 'admin',
+        displayName: 'Admin / 管理员',
+        permissions: [
+            'memory:*:tenant',
+            'channel:*:tenant',
+            'agent:*:tenant',
+            'task:*:tenant',
+            'approval:*:tenant',
+            'payment:*:tenant',
+            'audit:read:tenant',
+            'plugin:*:tenant',
+        ],
+        isSystem: true,
+        createdAt: SYSTEM_CREATED_AT,
+        updatedAt: SYSTEM_CREATED_AT,
+    },
+    {
+        id: 'role_manager',
+        tenantId: SYSTEM_TENANT_ID,
+        name: 'manager',
+        displayName: 'Manager / 经理',
+        permissions: [
+            'memory:read:org',
+            'memory:update:org',
+            'channel:create:org',
+            'channel:read:org',
+            'channel:update:org',
+            'agent:read:org',
+            'agent:execute:org',
+            'task:create:org',
+            'task:read:org',
+            'task:update:org',
+            'approval:create:org',
+            'approval:approve:org',
+            'audit:read:org',
+            'plugin:read:org',
+        ],
+        isSystem: true,
+        createdAt: SYSTEM_CREATED_AT,
+        updatedAt: SYSTEM_CREATED_AT,
+    },
+    {
+        id: 'role_agent',
+        tenantId: SYSTEM_TENANT_ID,
+        name: 'agent',
+        displayName: 'Agent / 智能体',
+        permissions: [
+            'memory:read:own',
+            'memory:update:own',
+            'channel:read:own',
+            'channel:execute:own',
+            'agent:read:own',
+            'agent:execute:own',
+            'task:create:own',
+            'task:read:own',
+            'task:update:own',
+            'approval:create:own',
+            'plugin:read:own',
+            'plugin:execute:own',
+        ],
+        isSystem: true,
+        createdAt: SYSTEM_CREATED_AT,
+        updatedAt: SYSTEM_CREATED_AT,
+    },
+    {
+        id: 'role_guest',
+        tenantId: SYSTEM_TENANT_ID,
+        name: 'guest',
+        displayName: 'Guest / 访客',
+        permissions: [
+            'memory:read:own',
+            'channel:read:own',
+            'agent:read:own',
+            'task:read:own',
+            'plugin:read:own',
+        ],
+        isSystem: true,
+        createdAt: SYSTEM_CREATED_AT,
+        updatedAt: SYSTEM_CREATED_AT,
+    },
+    {
+        id: 'role_auditor',
+        tenantId: SYSTEM_TENANT_ID,
+        name: 'auditor',
+        displayName: 'Auditor / 审计员',
+        permissions: [
+            'memory:read:tenant',
+            'channel:read:tenant',
+            'agent:read:tenant',
+            'task:read:tenant',
+            'approval:read:tenant',
+            'payment:read:tenant',
+            'audit:read:tenant',
+            'plugin:read:tenant',
+        ],
+        isSystem: true,
+        createdAt: SYSTEM_CREATED_AT,
+        updatedAt: SYSTEM_CREATED_AT,
+    },
+];
+//# sourceMappingURL=rbac.js.map

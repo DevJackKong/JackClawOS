@@ -26,6 +26,18 @@ const chat_worker_1 = require("../chat-worker");
 const offline_queue_1 = require("../store/offline-queue");
 const router = (0, express_1.Router)();
 exports.chatRouter = router;
+function getRequesterId(req) {
+    const payload = req.jwtPayload;
+    return payload?.nodeId ?? payload?.handle ?? payload?.sub ?? null;
+}
+function getRecallTargets(msg) {
+    const directTargets = Array.isArray(msg.to) ? msg.to : [msg.to];
+    const group = directTargets.length === 1 ? chat_worker_1.chatWorker.store.getGroup(directTargets[0]) : null;
+    const participants = group
+        ? [msg.from, ...group.members.filter(member => member !== msg.from)]
+        : [msg.from, ...directTargets];
+    return [...new Set(participants)];
+}
 // ─── REST 路由 ────────────────────────────────────────────────────────────────
 // 发送消息
 router.post('/send', (req, res) => {
@@ -37,6 +49,46 @@ router.post('/send', (req, res) => {
     // Delegate to worker — delivery is async, we return immediately
     chat_worker_1.chatWorker.handleIncoming(msg);
     res.json({ status: 'ok', messageId: msg.id });
+});
+// 撤回消息
+router.delete('/messages/:id', (req, res) => {
+    const requesterId = getRequesterId(req);
+    if (!requesterId) {
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
+    }
+    const messageId = req.params.id;
+    const msg = chat_worker_1.chatWorker.store.getMessage(messageId);
+    if (!msg) {
+        res.status(404).json({ error: 'Message not found' });
+        return;
+    }
+    if (msg.from !== requesterId) {
+        res.status(403).json({ error: 'Only sender can recall message' });
+        return;
+    }
+    if (msg.recalled) {
+        res.json({ status: 'ok', message: msg });
+        return;
+    }
+    if (Date.now() - msg.ts > 2 * 60 * 1000) {
+        res.status(400).json({ error: 'Recall window expired' });
+        return;
+    }
+    const recalled = chat_worker_1.chatWorker.store.recallMessage(messageId, Date.now());
+    if (!recalled) {
+        res.status(500).json({ error: 'Failed to recall message' });
+        return;
+    }
+    const participants = getRecallTargets(recalled);
+    for (const participant of participants) {
+        chat_worker_1.chatWorker.pushEvent(participant, 'message_recalled', {
+            id: recalled.id,
+            threadId: recalled.threadId,
+            recalledAt: recalled.recalledAt,
+        });
+    }
+    res.json({ status: 'ok', message: recalled });
 });
 // 拉取离线消息（Node 上线时调用）
 // 合并 chat inbox + social offlineQueue，支持 nodeId 或 handle 查询

@@ -9,7 +9,7 @@ export declare const rateLimiter: {
     global: import("express-rate-limit").RateLimitRequestHandler;
     /** Login: 10 attempts/min per IP+nodeId — brute-force protection */
     login: import("express-rate-limit").RateLimitRequestHandler;
-    /** Register: 5 attempts/min per IP — prevent account flooding */
+    /** Register: 10 attempts/hour per IP — prevent account flooding */
     register: import("express-rate-limit").RateLimitRequestHandler;
     /** Message send: 60/min per IP+nodeId */
     message: import("express-rate-limit").RateLimitRequestHandler;

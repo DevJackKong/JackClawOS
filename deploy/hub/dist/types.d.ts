@@ -47,4 +47,18 @@ export interface JWTPayload {
     iat?: number;
     exp?: number;
 }
+export interface TenantContext {
+    tenantId: string;
+    orgId?: string;
+    workspaceId?: string;
+    userId: string;
+    role: string;
+}
+declare global {
+    namespace Express {
+        interface Request {
+            tenantContext?: TenantContext;
+        }
+    }
+}
 //# sourceMappingURL=types.d.ts.map

@@ -30,6 +30,7 @@ const presence_1 = require("../presence");
 const offline_queue_1 = require("../store/offline-queue");
 const directory_1 = require("../store/directory");
 const protocol_1 = require("@jackclaw/protocol");
+const webhooks_1 = require("./webhooks");
 // Lazy import to avoid circular dependencies at module load time
 function getFedMgr() {
     try {
@@ -42,7 +43,54 @@ function getFedMgr() {
     }
 }
 const router = (0, express_1.Router)();
-// ─── Storage (contacts, requests, profiles remain file-backed) ────────────────
+function getAuthedAgentHandle(req) {
+    const handle = req.jwtPayload?.role === 'user' && typeof req.jwtPayload.nodeId !== 'string'
+        ? req.jwtPayload.handle
+        : null;
+    if (!handle)
+        return null;
+    return typeof handle === 'string' && handle.startsWith('@') ? handle : `@${handle}`;
+}
+function getRequestedAgentHandle(req) {
+    const fromQuery = req.query.agentHandle;
+    if (typeof fromQuery !== 'string' || !fromQuery.trim())
+        return null;
+    return fromQuery.trim();
+}
+function requireAuthorizedAgentHandle(req, res) {
+    const authedHandle = getAuthedAgentHandle(req);
+    const requestedHandle = getRequestedAgentHandle(req);
+    if (!authedHandle) {
+        if (!requestedHandle) {
+            res.status(400).json({ error: 'agentHandle required' });
+            return null;
+        }
+        return requestedHandle;
+    }
+    if (requestedHandle && requestedHandle !== authedHandle) {
+        res.status(403).json({ error: 'forbidden', message: '不能访问其他 handle 的社交数据' });
+        return null;
+    }
+    return authedHandle;
+}
+function requireAuthorizedFromAgent(req, res, fromAgent) {
+    const authedHandle = getAuthedAgentHandle(req);
+    if (!authedHandle) {
+        if (!fromAgent) {
+            res.status(400).json({ error: 'fromAgent required' });
+            return null;
+        }
+        return fromAgent;
+    }
+    if (!fromAgent)
+        return authedHandle;
+    if (fromAgent !== authedHandle) {
+        res.status(403).json({ error: 'forbidden', message: '不能冒用其他 handle 发消息' });
+        return null;
+    }
+    return authedHandle;
+}
+// ─── Storage (contacts, requests, profiles remain file-backed) ─────────────────
 const HUB_DIR = path_1.default.join(process.env.HOME || '~', '.jackclaw', 'hub');
 const SOCIAL_CONTACTS_FILE = path_1.default.join(HUB_DIR, 'social-contacts.json');
 const SOCIAL_REQUESTS_FILE = path_1.default.join(HUB_DIR, 'social-requests.json');
@@ -62,7 +110,7 @@ function saveJSON(file, data) {
 let contacts = loadJSON(SOCIAL_CONTACTS_FILE, {});
 let requests = loadJSON(SOCIAL_REQUESTS_FILE, {});
 let profiles = loadJSON(SOCIAL_PROFILES_FILE, {});
-// ─── SocialMessage ↔ StoredMessage adapters ───────────────────────────────────
+// ─── SocialMessage ↔ StoredMessage adapters ────────────────────────────────────
 function socialToStored(msg) {
     return {
         id: msg.id,
@@ -93,7 +141,7 @@ function storedToSocial(s) {
         signature: '',
     };
 }
-// ─── Thread helper ────────────────────────────────────────────────────────────
+// ─── Thread helper ─────────────────────────────────────────────────────────────
 function getOrCreateThread(a, b) {
     const key = [a, b].sort().join('↔');
     const recent = message_store_1.messageStore.getMessagesByParticipant(a, 10, 0);
@@ -103,7 +151,7 @@ function getOrCreateThread(a, b) {
         return existing.threadId;
     return `thread-${key}-${Date.now()}`;
 }
-// ─── Deliver helper ───────────────────────────────────────────────────────────
+// ─── Deliver helper ────────────────────────────────────────────────────────────
 /**
  * Attempt to deliver a social message to the target agent.
  *
@@ -118,6 +166,14 @@ function deliverSocialMsg(msg) {
     // Normalize the target handle for consistent queue keying
     const parsed = (0, protocol_1.parseHandle)(msg.toAgent);
     const queueHandle = parsed ? `@${parsed.local}` : msg.toAgent;
+    (0, webhooks_1.queueWebhookEvent)(msg.toAgent, 'message', {
+        id: msg.id,
+        fromAgent: msg.fromAgent,
+        toAgent: msg.toAgent,
+        content: msg.content,
+        type: msg.type,
+        ts: msg.ts,
+    });
     if (!nodeId) {
         // Agent not registered — queue by handle; will be drained when they register+connect
         offline_queue_1.offlineQueue.enqueue(queueHandle, { event: 'social', data: msg });
@@ -151,24 +207,30 @@ function deliverFederatedMessage(msg) {
     deliverSocialMsg(msg);
     console.log(`[social/fed] Federated delivery: ${msg.fromAgent} → ${msg.toAgent}`);
 }
-// ─── POST /send ───────────────────────────────────────────────────────────────
+// ─── POST /send ────────────────────────────────────────────────────────────────
 router.post('/send', async (req, res) => {
     const body = req.body;
-    if (!body.fromHuman || !body.fromAgent || !body.toAgent || !body.content) {
-        return res.status(400).json({ error: 'missing_fields', required: ['fromHuman', 'fromAgent', 'toAgent', 'content'] });
+    const fromAgent = requireAuthorizedFromAgent(req, res, body.fromAgent);
+    if (!fromAgent)
+        return;
+    if (!body.toAgent || !body.content) {
+        return res.status(400).json({ error: 'missing_fields', required: ['toAgent', 'content'] });
     }
+    const fromHuman = typeof body.fromHuman === 'string' && body.fromHuman.trim().length > 0
+        ? body.fromHuman
+        : fromAgent.replace(/^@/, '');
     // Resolve target profile using both original and canonical forms
     const targetProfile = profiles[body.toAgent] ?? profiles[(0, protocol_1.normalizeAgentAddress)(body.toAgent)];
     if (targetProfile?.contactPolicy === 'closed') {
         return res.status(403).json({ error: 'contact_policy_closed', message: `${body.toAgent} 不接受外来消息` });
     }
     if (targetProfile?.contactPolicy === 'request') {
-        const myContacts = contacts[body.fromAgent] ?? [];
+        const myContacts = contacts[fromAgent] ?? [];
         if (!myContacts.includes(body.toAgent)) {
             return res.status(403).json({ error: 'contact_required', message: `需先发送联系请求并被接受` });
         }
     }
-    const msgUserId = body.fromAgent;
+    const msgUserId = fromAgent;
     const msgQuota = quota_1.quotaManager.checkQuota(msgUserId, 'maxMessagePerDay');
     if (!msgQuota.allowed) {
         return res.status(429).json({
@@ -177,11 +239,11 @@ router.post('/send', async (req, res) => {
             remaining: 0,
         });
     }
-    const thread = body.thread ?? getOrCreateThread(body.fromAgent, body.toAgent);
+    const thread = body.thread ?? getOrCreateThread(fromAgent, body.toAgent);
     const msg = {
         id: body.id ?? crypto_1.default.randomUUID(),
-        fromHuman: body.fromHuman,
-        fromAgent: body.fromAgent,
+        fromHuman,
+        fromAgent,
         toAgent: body.toAgent,
         toHuman: body.toHuman,
         content: body.content,
@@ -226,20 +288,23 @@ router.post('/send', async (req, res) => {
     console.log(`[social] ${msg.fromAgent} → ${msg.toAgent}: ${msg.content.slice(0, 50)}`);
     return res.status(201).json({ status: 'ok', messageId: msg.id, thread });
 });
-// ─── POST /contact ────────────────────────────────────────────────────────────
+// ─── POST /contact ─────────────────────────────────────────────────────────────
 router.post('/contact', (req, res) => {
     const body = req.body;
-    if (!body.fromAgent || !body.toAgent || !body.message) {
-        return res.status(400).json({ error: 'missing_fields', required: ['fromAgent', 'toAgent', 'message'] });
+    const fromAgent = requireAuthorizedFromAgent(req, res, body.fromAgent);
+    if (!fromAgent)
+        return;
+    if (!body.toAgent || !body.message) {
+        return res.status(400).json({ error: 'missing_fields', required: ['toAgent', 'message'] });
     }
-    const myContacts = contacts[body.fromAgent] ?? contacts[(0, protocol_1.normalizeAgentAddress)(body.fromAgent)] ?? [];
+    const myContacts = contacts[fromAgent] ?? contacts[(0, protocol_1.normalizeAgentAddress)(fromAgent)] ?? [];
     const toKey = body.toAgent;
     if (myContacts.includes(toKey) || myContacts.includes((0, protocol_1.normalizeAgentAddress)(toKey))) {
         return res.status(409).json({ error: 'already_contacts', message: '你们已经是联系人' });
     }
     const req2 = {
         id: crypto_1.default.randomUUID(),
-        fromAgent: body.fromAgent,
+        fromAgent,
         toAgent: body.toAgent,
         message: body.message,
         purpose: body.purpose ?? '建立联系',
@@ -248,6 +313,7 @@ router.post('/contact', (req, res) => {
     };
     requests[req2.id] = req2;
     saveJSON(SOCIAL_REQUESTS_FILE, requests);
+    (0, webhooks_1.queueWebhookEvent)(req2.toAgent, 'contact_request', req2);
     // Notify target via WS or queue
     const { nodeId: toNodeId, wsConnected } = presence_1.presenceManager.resolveHandle(body.toAgent);
     if (toNodeId && wsConnected) {
@@ -259,16 +325,19 @@ router.post('/contact', (req, res) => {
     console.log(`[social] Contact request: ${req2.fromAgent} → ${req2.toAgent}`);
     return res.status(201).json({ status: 'ok', requestId: req2.id, request: req2 });
 });
-// ─── POST /contact/respond ────────────────────────────────────────────────────
+// ─── POST /contact/respond ─────────────────────────────────────────────────────
 router.post('/contact/respond', (req, res) => {
     const body = req.body;
-    if (!body.requestId || !body.fromAgent || !body.decision) {
-        return res.status(400).json({ error: 'missing_fields', required: ['requestId', 'fromAgent', 'decision'] });
+    const fromAgent = requireAuthorizedFromAgent(req, res, body.fromAgent);
+    if (!fromAgent)
+        return;
+    if (!body.requestId || !body.decision) {
+        return res.status(400).json({ error: 'missing_fields', required: ['requestId', 'decision'] });
     }
     const cr = requests[body.requestId];
     if (!cr)
         return res.status(404).json({ error: 'request_not_found' });
-    if (cr.toAgent !== body.fromAgent)
+    if (cr.toAgent !== fromAgent)
         return res.status(403).json({ error: 'not_your_request' });
     cr.status = body.decision === 'accept' ? 'accepted' : 'declined';
     requests[body.requestId] = cr;
@@ -286,6 +355,7 @@ router.post('/contact/respond', (req, res) => {
     }
     // Notify requester via WS or queue
     const responsePayload = { requestId: body.requestId, decision: body.decision, message: body.message };
+    (0, webhooks_1.queueWebhookEvent)(cr.fromAgent, 'contact_response', responsePayload);
     const { nodeId: fromNodeId, wsConnected } = presence_1.presenceManager.resolveHandle(cr.fromAgent);
     if (fromNodeId && wsConnected) {
         (0, chat_1.pushToNodeWs)(fromNodeId, 'social_contact_response', responsePayload);
@@ -296,35 +366,36 @@ router.post('/contact/respond', (req, res) => {
     console.log(`[social] Contact response: ${cr.toAgent} ${body.decision} request from ${cr.fromAgent}`);
     return res.json({ status: 'ok', requestId: body.requestId, decision: body.decision });
 });
-// ─── GET /contacts ────────────────────────────────────────────────────────────
+// ─── GET /contacts ─────────────────────────────────────────────────────────────
 router.get('/contacts', (req, res) => {
-    const { agentHandle } = req.query;
+    const agentHandle = requireAuthorizedAgentHandle(req, res);
     if (!agentHandle)
-        return res.status(400).json({ error: 'agentHandle required' });
+        return;
     const list = contacts[agentHandle] ?? [];
     const enriched = list.map(h => ({ handle: h, profile: profiles[h] ?? null }));
     return res.json({ contacts: enriched, count: list.length });
 });
-// ─── GET /messages ────────────────────────────────────────────────────────────
+// ─── GET /messages ─────────────────────────────────────────────────────────────
 router.get('/messages', (req, res) => {
-    const { agentHandle, limit: limitStr, offset: offsetStr } = req.query;
+    const agentHandle = requireAuthorizedAgentHandle(req, res);
     if (!agentHandle)
-        return res.status(400).json({ error: 'agentHandle required' });
+        return;
+    const { limit: limitStr, offset: offsetStr } = req.query;
     const limit = parseInt(limitStr ?? '20', 10);
     const offset = parseInt(offsetStr ?? '0', 10);
     const stored = message_store_1.messageStore.getInbox(agentHandle, limit, offset);
     const inbox = stored.map(storedToSocial);
     return res.json({ messages: inbox, count: inbox.length });
 });
-// ─── POST /profile ────────────────────────────────────────────────────────────
+// ─── POST /profile ─────────────────────────────────────────────────────────────
 router.post('/profile', (req, res) => {
     const body = req.body;
-    if (!body.agentHandle) {
-        return res.status(400).json({ error: 'agentHandle required' });
-    }
-    const existing = profiles[body.agentHandle] ?? {};
+    const agentHandle = requireAuthorizedFromAgent(req, res, body.agentHandle);
+    if (!agentHandle)
+        return;
+    const existing = profiles[agentHandle] ?? {};
     const profile = {
-        agentHandle: body.agentHandle,
+        agentHandle,
         ownerName: body.ownerName ?? existing.ownerName ?? '',
         ownerTitle: body.ownerTitle ?? existing.ownerTitle ?? '',
         bio: body.bio ?? existing.bio ?? '',
@@ -333,9 +404,9 @@ router.post('/profile', (req, res) => {
         hubUrl: body.hubUrl ?? existing.hubUrl ?? `http://localhost:${process.env.HUB_PORT ?? 3100}`,
         updatedAt: Date.now(),
     };
-    profiles[body.agentHandle] = profile;
+    profiles[agentHandle] = profile;
     saveJSON(SOCIAL_PROFILES_FILE, profiles);
-    console.log(`[social] Profile updated: ${body.agentHandle}`);
+    console.log(`[social] Profile updated: ${agentHandle}`);
     return res.json({ status: 'ok', profile });
 });
 // ─── GET /profile/:handle ─────────────────────────────────────────────────────
@@ -346,11 +417,14 @@ router.get('/profile/:handle', (req, res) => {
         return res.status(404).json({ error: 'profile_not_found', handle });
     return res.json({ profile });
 });
-// ─── POST /reply ──────────────────────────────────────────────────────────────
+// ─── POST /reply ───────────────────────────────────────────────────────────────
 router.post('/reply', (req, res) => {
-    const { replyToId, fromHuman, fromAgent, content, type } = req.body;
-    if (!replyToId || !fromHuman || !fromAgent || !content) {
-        return res.status(400).json({ error: 'missing_fields', required: ['replyToId', 'fromHuman', 'fromAgent', 'content'] });
+    const { replyToId, fromHuman, fromAgent: requestedFromAgent, content, type } = req.body;
+    const fromAgent = requireAuthorizedFromAgent(req, res, requestedFromAgent);
+    if (!fromAgent)
+        return;
+    if (!replyToId || !content) {
+        return res.status(400).json({ error: 'missing_fields', required: ['replyToId', 'content'] });
     }
     const original = message_store_1.messageStore.getMessage(replyToId);
     if (!original)
@@ -358,7 +432,7 @@ router.post('/reply', (req, res) => {
     const toAgent = original.fromAgent === fromAgent ? original.toAgent : original.fromAgent;
     const msg = {
         id: crypto_1.default.randomUUID(),
-        fromHuman,
+        fromHuman: fromHuman || fromAgent.replace(/^@/, ''),
         fromAgent,
         toAgent,
         content,
@@ -377,11 +451,11 @@ router.post('/reply', (req, res) => {
     console.log(`[social] Reply: ${fromAgent} → ${toAgent} (replyTo: ${replyToId})`);
     return res.status(201).json({ status: 'ok', messageId: msg.id });
 });
-// ─── GET /threads ─────────────────────────────────────────────────────────────
+// ─── GET /threads ──────────────────────────────────────────────────────────────
 router.get('/threads', (req, res) => {
-    const { agentHandle } = req.query;
+    const agentHandle = requireAuthorizedAgentHandle(req, res);
     if (!agentHandle)
-        return res.status(400).json({ error: 'agentHandle required' });
+        return;
     const stored = message_store_1.messageStore.getMessagesByParticipant(agentHandle, 1000, 0);
     const myMsgs = stored.map(storedToSocial);
     const threadMap = new Map();
@@ -409,7 +483,7 @@ router.get('/threads', (req, res) => {
     const threads = [...threadMap.values()].sort((a, b) => b.lastMessageAt - a.lastMessageAt);
     return res.json({ threads, count: threads.length });
 });
-// ─── GET /thread/:id — 获取指定会话的完整消息历史 ─────────────────────────────
+// ─── GET /thread/:id — 获取指定会话的完整消息历史 ────────────────────────────────
 router.get('/thread/:id', (req, res) => {
     const threadId = decodeURIComponent(req.params.id);
     const limit = Math.min(parseInt(req.query.limit ?? '200', 10), 500);

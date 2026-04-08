@@ -18,6 +18,8 @@ export interface StoredMessage {
     status: string;
     ts: number;
     encrypted: boolean;
+    recalled?: boolean;
+    recalledAt?: number;
 }
 export interface SearchOptions {
     from?: string;
@@ -41,6 +43,7 @@ export declare class MessageStore {
     getMessage(id: string): StoredMessage | null;
     getThread(t: string, l?: number, o?: number): StoredMessage[];
     getInbox(h: string, l?: number, o?: number): StoredMessage[];
+    markMessageRecalled(id: string, recalledAt: number): StoredMessage | null;
     deleteMessage(id: string): void;
     getStats(): {
         totalMessages: number;

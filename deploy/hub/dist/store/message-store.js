@@ -41,6 +41,8 @@ function row2msg(row) {
         status: row.status,
         ts: row.ts,
         encrypted: row.encrypted === 1,
+        recalled: row.recalled === 1,
+        recalledAt: typeof row.recalled_at === 'number' ? row.recalled_at : undefined,
     };
 }
 function sanitizeFts(q) {
@@ -60,7 +62,9 @@ const CREATE_STMTS = [
     attachments TEXT,
     status      TEXT DEFAULT 'sent',
     ts          INTEGER,
-    encrypted   INTEGER DEFAULT 0
+    encrypted   INTEGER DEFAULT 0,
+    recalled    INTEGER DEFAULT 0,
+    recalled_at INTEGER
   )`,
     `CREATE INDEX IF NOT EXISTS idx_thread ON messages(thread_id)`,
     `CREATE INDEX IF NOT EXISTS idx_to     ON messages(to_agent)`,
@@ -113,6 +117,14 @@ class SqliteMessageStore {
         for (const sql of CREATE_STMTS) {
             this.db.run(sql);
         }
+        try {
+            this.db.run('ALTER TABLE messages ADD COLUMN recalled INTEGER DEFAULT 0');
+        }
+        catch { }
+        try {
+            this.db.run('ALTER TABLE messages ADD COLUMN recalled_at INTEGER');
+        }
+        catch { }
         // Auto-save to disk every 5s if dirty
         this._saveTimer = setInterval(() => this._flush(), 5000);
         this._saveTimer.unref();
@@ -139,8 +151,8 @@ class SqliteMessageStore {
         sqlRun(this.db, `
       INSERT OR REPLACE INTO messages
         (id, thread_id, from_agent, to_agent, from_human, content, type,
-         reply_to, attachments, status, ts, encrypted)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         reply_to, attachments, status, ts, encrypted, recalled, recalled_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
             msg.id,
             msg.threadId ?? null,
@@ -154,6 +166,8 @@ class SqliteMessageStore {
             msg.status ?? 'sent',
             msg.ts,
             msg.encrypted ? 1 : 0,
+            msg.recalled ? 1 : 0,
+            msg.recalledAt ?? null,
         ]);
         // Keep FTS in sync
         sqlRun(this.db, `DELETE FROM messages_fts WHERE message_id = ?`, [msg.id]);
@@ -243,6 +257,14 @@ class SqliteMessageStore {
     getInbox(agentHandle, limit = 20, offset = 0) {
         return sqlAll(this.db, `SELECT * FROM messages WHERE to_agent = ? ORDER BY ts DESC LIMIT ? OFFSET ?`, [agentHandle, limit, offset]).map(row2msg);
     }
+    markMessageRecalled(id, recalledAt) {
+        const current = this.getMessage(id);
+        if (!current)
+            return null;
+        const updated = { ...current, recalled: true, recalledAt, status: 'recalled' };
+        this.saveMessage(updated);
+        return updated;
+    }
     deleteMessage(id) {
         sqlRun(this.db, `DELETE FROM messages_fts WHERE message_id = ?`, [id]);
         sqlRun(this.db, `DELETE FROM messages WHERE id = ?`, [id]);
@@ -322,6 +344,14 @@ class JsonlMessageStore {
             .sort((a, b) => b.ts - a.ts)
             .slice(offset, offset + limit);
     }
+    markMessageRecalled(id, recalledAt) {
+        const idx = this.messages.findIndex(m => m.id === id);
+        if (idx < 0)
+            return null;
+        this.messages[idx] = { ...this.messages[idx], recalled: true, recalledAt, status: 'recalled' };
+        this._rewrite();
+        return this.messages[idx];
+    }
     deleteMessage(id) {
         this.messages = this.messages.filter(m => m.id !== id);
         this._rewrite();
@@ -376,6 +406,7 @@ class MessageStore {
     getMessage(id) { return this.backend.getMessage(id); }
     getThread(t, l, o) { return this.backend.getThread(t, l, o); }
     getInbox(h, l, o) { return this.backend.getInbox(h, l, o); }
+    markMessageRecalled(id, recalledAt) { return this.backend.markMessageRecalled(id, recalledAt); }
     deleteMessage(id) { this.backend.deleteMessage(id); }
     getStats() { return this.backend.getStats(); }
     getMessagesByParticipant(h, l, o) {

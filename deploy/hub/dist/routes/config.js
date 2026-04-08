@@ -1,0 +1,200 @@
+"use strict";
+// Hub routes - Config API
+// GET    /api/config                  → 列出配置 / List config entries
+// GET    /api/config/:key/effective   → 获取生效值 / Get effective config value
+// GET    /api/config/:key             → 获取单个配置 / Get one config entry
+// PUT    /api/config/:key             → 设置配置 / Set one config entry
+// DELETE /api/config/:key             → 删除配置 / Delete one config entry
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const config_store_1 = require("../store/config-store");
+const server_1 = require("../server");
+const router = (0, express_1.Router)();
+/**
+ * Validate API scope.
+ * 校验 API 层 scope 参数是否合法。
+ */
+function isValidApiScope(scope) {
+    return scope === undefined || scope === 'global' || scope === 'tenant' || scope === 'org' || scope === 'user';
+}
+/**
+ * Convert API scope to store scope.
+ * 将 API 的 global 映射为存储层的 system。
+ */
+function toStoreScope(scope) {
+    if (scope === undefined)
+        return undefined;
+    if (scope === 'global')
+        return 'system';
+    if (scope === 'tenant' || scope === 'org' || scope === 'user')
+        return scope;
+    return undefined;
+}
+/**
+ * Read optional scope query.
+ * 读取可选的 scope / scopeId 查询参数。
+ */
+function getScopeQuery(req) {
+    const { scope, scopeId } = req.query;
+    return {
+        scope: typeof scope === 'string' && scope.trim() ? scope.trim() : undefined,
+        scopeId: typeof scopeId === 'string' && scopeId.trim() ? scopeId.trim() : undefined,
+    };
+}
+/**
+ * Resolve current operator id.
+ * 解析当前操作者 ID，用于写入 updatedBy。
+ */
+function getUpdatedBy(req) {
+    const operator = req.tenantContext?.userId
+        ?? req.jwtPayload?.nodeId
+        ?? req.jwtPayload?.role;
+    return typeof operator === 'string' && operator.trim() ? operator.trim() : undefined;
+}
+/**
+ * GET /
+ * List config entries.
+ * 列出配置，支持按 scope / scopeId 过滤。
+ *
+ * Query:
+ * - scope?: global | tenant | org | user
+ * - scopeId?: string
+ */
+router.get('/', (0, server_1.asyncHandler)(async (req, res) => {
+    const { scope, scopeId } = getScopeQuery(req);
+    if (!isValidApiScope(scope)) {
+        res.status(400).json({ error: 'Invalid scope. Must be global | tenant | org | user' });
+        return;
+    }
+    const configs = config_store_1.configStore.list(toStoreScope(scope), scopeId);
+    res.json({ success: true, configs });
+}));
+/**
+ * GET /:key/effective
+ * Get effective config value by inheritance.
+ * 获取最终生效配置值，优先级通常为 user > org > tenant > global。
+ *
+ * Note:
+ * - Must be declared before `/:key`.
+ * - 必须放在 `/:key` 路由前面。
+ *
+ * Query:
+ * - tenantId?: string
+ * - orgId?: string
+ * - userId?: string
+ */
+router.get('/:key/effective', (0, server_1.asyncHandler)(async (req, res) => {
+    const key = req.params.key?.trim();
+    const { tenantId, orgId, userId } = req.query;
+    if (!key) {
+        res.status(400).json({ error: 'key is required' });
+        return;
+    }
+    const effective = config_store_1.configStore.getEffective(key, typeof tenantId === 'string' && tenantId.trim() ? tenantId.trim() : undefined, typeof orgId === 'string' && orgId.trim() ? orgId.trim() : undefined, typeof userId === 'string' && userId.trim() ? userId.trim() : undefined);
+    if (effective === undefined) {
+        res.status(404).json({ error: 'Config not found' });
+        return;
+    }
+    res.json({ success: true, key, effective });
+}));
+/**
+ * GET /:key
+ * Get one config value by key + exact scope.
+ * 按 key + 精确作用域获取单个配置值。
+ *
+ * Query:
+ * - scope?: global | tenant | org | user
+ * - scopeId?: string
+ */
+router.get('/:key', (0, server_1.asyncHandler)(async (req, res) => {
+    const key = req.params.key?.trim();
+    const { scope, scopeId } = getScopeQuery(req);
+    if (!key) {
+        res.status(400).json({ error: 'key is required' });
+        return;
+    }
+    if (!isValidApiScope(scope)) {
+        res.status(400).json({ error: 'Invalid scope. Must be global | tenant | org | user' });
+        return;
+    }
+    const config = config_store_1.configStore.get(key, toStoreScope(scope), scopeId);
+    if (config === undefined) {
+        res.status(404).json({ error: 'Config not found' });
+        return;
+    }
+    res.json({ success: true, key, config });
+}));
+/**
+ * PUT /:key
+ * Set one config value.
+ * 设置单个配置。
+ *
+ * Body:
+ * - value: unknown
+ * - scope: global | tenant | org | user
+ * - scopeId?: string
+ * - description?: string
+ *
+ * Note:
+ * - Current configStore.set signature is (key, value, scope, scopeId?, updatedBy?).
+ * - description 字段当前仅做入参兼容，不会持久化到 store。
+ */
+router.put('/:key', (0, server_1.asyncHandler)(async (req, res) => {
+    const key = req.params.key?.trim();
+    const { value, scope = 'global', scopeId, description } = (req.body ?? {});
+    if (!key) {
+        res.status(400).json({ error: 'key is required' });
+        return;
+    }
+    if (!isValidApiScope(scope)) {
+        res.status(400).json({ error: 'Invalid scope. Must be global | tenant | org | user' });
+        return;
+    }
+    if (scope !== 'global' && (!scopeId || typeof scopeId !== 'string' || !scopeId.trim())) {
+        res.status(400).json({ error: 'scopeId is required when scope is tenant | org | user' });
+        return;
+    }
+    if (description !== undefined && typeof description !== 'string') {
+        res.status(400).json({ error: 'description must be a string' });
+        return;
+    }
+    const config = config_store_1.configStore.set(key, value, toStoreScope(scope), scope === 'global' ? undefined : scopeId?.trim(), getUpdatedBy(req));
+    res.json({
+        success: true,
+        config,
+        ...(description !== undefined ? { note: 'description accepted but not persisted by current configStore.set signature' } : {}),
+    });
+}));
+/**
+ * DELETE /:key
+ * Delete one config value.
+ * 删除单个配置。
+ *
+ * Query:
+ * - scope?: global | tenant | org | user
+ * - scopeId?: string
+ */
+router.delete('/:key', (0, server_1.asyncHandler)(async (req, res) => {
+    const key = req.params.key?.trim();
+    const { scope = 'global', scopeId } = getScopeQuery(req);
+    if (!key) {
+        res.status(400).json({ error: 'key is required' });
+        return;
+    }
+    if (!isValidApiScope(scope)) {
+        res.status(400).json({ error: 'Invalid scope. Must be global | tenant | org | user' });
+        return;
+    }
+    if (scope !== 'global' && !scopeId) {
+        res.status(400).json({ error: 'scopeId is required when scope is tenant | org | user' });
+        return;
+    }
+    const deleted = config_store_1.configStore.delete(key, toStoreScope(scope), scope === 'global' ? undefined : scopeId);
+    if (!deleted) {
+        res.status(404).json({ error: 'Config not found' });
+        return;
+    }
+    res.json({ success: true, deleted: true });
+}));
+exports.default = router;
+//# sourceMappingURL=config.js.map

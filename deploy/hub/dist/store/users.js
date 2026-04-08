@@ -70,7 +70,7 @@ class UserStore {
         return stripped.replace(/[^a-z0-9_-]/g, '');
     }
     // ─── Registration ──────────────────────────────────────────────────────────
-    async register(handle, password, displayName, email) {
+    async register(handle, password, displayName, email, tenantId, orgId) {
         const h = this.normalizeHandle(handle);
         if (h.length < 3)
             throw Object.assign(new Error('handle 至少 3 个字符'), { status: 400 });
@@ -86,6 +86,8 @@ class UserStore {
             handle: h,
             displayName: displayName.trim().slice(0, 64),
             email,
+            tenantId,
+            orgId,
             passwordHash,
             passwordSalt: salt,
             agentNodeId,
@@ -213,6 +215,10 @@ class UserStore {
                 createdAt: user.createdAt,
                 lastSeen: user.createdAt,
             };
+            if (user.tenantId) {
+                ;
+                profile.tenantId = user.tenantId;
+            }
             dir[handle] = profile;
             saveJSON(DIRECTORY_FILE, dir);
         }

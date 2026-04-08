@@ -19,9 +19,11 @@ const express_1 = require("express");
 const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
 const crypto_1 = __importDefault(require("crypto"));
+const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const users_1 = require("../store/users");
 const directory_1 = require("../store/directory");
 const presence_1 = require("../presence");
+const server_1 = require("../server");
 const router = (0, express_1.Router)();
 // ─── Paths ────────────────────────────────────────────────────────────────────
 const HUB_DIR = path_1.default.join(process.env.HOME ?? '~', '.jackclaw', 'hub');
@@ -80,61 +82,115 @@ function asyncRoute(fn) {
         });
     };
 }
+function isPublicRegisterHandle(handle) {
+    const trimmed = handle.trim().toLowerCase();
+    return trimmed.length >= 3
+        && trimmed.length <= 50
+        && /^@[a-z0-9][a-z0-9_-]{0,47}\.[a-z0-9][a-z0-9_-]{0,47}$/.test(trimmed);
+}
+function issueUserToken(handle, displayName) {
+    return jsonwebtoken_1.default.sign({ handle, displayName, role: 'user' }, server_1.JWT_SECRET, { expiresIn: '30d' });
+}
 // ─── Public: no JWT required ──────────────────────────────────────────────────
 // POST /api/auth/register
 router.post('/register', asyncRoute(async (req, res) => {
-    const { handle, password, displayName, email, inviteCode } = req.body ?? {};
-    if (!handle || !password || !displayName) {
-        res.status(400).json({ error: '缺少必填字段：handle、password、displayName' });
+    const { handle, password, displayName, email, inviteCode, hubUrl } = req.body ?? {};
+    if (password) {
+        if (!handle || !displayName) {
+            res.status(400).json({ error: '缺少必填字段：handle、password、displayName' });
+            return;
+        }
+        const config = getHubConfig();
+        if (config.requireInvite) {
+            if (!inviteCode || typeof inviteCode !== 'string') {
+                res.status(403).json({ error: 'invite_required', message: '此 Hub 需要邀请码才能注册' });
+                return;
+            }
+            const invites = loadInvites();
+            const record = invites[String(inviteCode).toUpperCase()];
+            if (!record) {
+                res.status(403).json({ error: 'invalid_invite', message: '邀请码无效' });
+                return;
+            }
+            if (record.usedBy) {
+                res.status(403).json({ error: 'invite_used', message: '邀请码已被使用' });
+                return;
+            }
+        }
+        const normalizedHandle = users_1.userStore.normalizeHandle(String(handle));
+        const result = await users_1.userStore.register(String(handle), String(password), String(displayName), email ? String(email) : undefined);
+        // Consume the invite only after successful registration
+        if (config.requireInvite && inviteCode) {
+            consumeInvite(String(inviteCode), normalizedHandle);
+        }
+        // Auto-register in directory so social messaging works immediately.
+        // Register both @jack (short) and @jack.jackclaw (canonical) as aliases for the same nodeId.
+        const shortHandle = `@${normalizedHandle}`;
+        const longHandle = `@${normalizedHandle}.jackclaw`;
+        const nodeId = `user-${normalizedHandle}`;
+        const existing = directory_1.directoryStore.getProfile(shortHandle) ?? directory_1.directoryStore.getProfile(longHandle);
+        if (!existing) {
+            const profileBase = {
+                nodeId,
+                displayName: String(displayName),
+                role: 'member',
+                publicKey: '',
+                hubUrl: `http://localhost:${process.env.HUB_PORT ?? process.env.PORT ?? 3100}`,
+                capabilities: [],
+                visibility: 'public',
+                createdAt: Date.now(),
+                lastSeen: Date.now(),
+            };
+            directory_1.directoryStore.registerHandle(shortHandle, { ...profileBase, handle: shortHandle });
+            directory_1.directoryStore.registerHandle(longHandle, { ...profileBase, handle: longHandle });
+            // Register in presence so resolveHandle works
+            presence_1.presenceManager.setOnline(nodeId);
+        }
+        res.status(201).json(result);
         return;
     }
-    const config = getHubConfig();
-    if (config.requireInvite) {
-        if (!inviteCode || typeof inviteCode !== 'string') {
-            res.status(403).json({ error: 'invite_required', message: '此 Hub 需要邀请码才能注册' });
-            return;
-        }
-        const invites = loadInvites();
-        const record = invites[String(inviteCode).toUpperCase()];
-        if (!record) {
-            res.status(403).json({ error: 'invalid_invite', message: '邀请码无效' });
-            return;
-        }
-        if (record.usedBy) {
-            res.status(403).json({ error: 'invite_used', message: '邀请码已被使用' });
-            return;
-        }
+    if (!handle || typeof handle !== 'string') {
+        res.status(400).json({ error: '缺少必填字段：handle' });
+        return;
     }
-    const normalizedHandle = users_1.userStore.normalizeHandle(String(handle));
-    const result = await users_1.userStore.register(String(handle), String(password), String(displayName), email ? String(email) : undefined);
-    // Consume the invite only after successful registration
-    if (config.requireInvite && inviteCode) {
-        consumeInvite(String(inviteCode), normalizedHandle);
+    const normalizedHandle = String(handle).trim().toLowerCase();
+    if (!isPublicRegisterHandle(normalizedHandle)) {
+        res.status(400).json({ error: 'handle 必须是 3-50 字符的 @xxx.yyy 格式' });
+        return;
     }
-    // Auto-register in directory so social messaging works immediately.
-    // Register both @jack (short) and @jack.jackclaw (canonical) as aliases for the same nodeId.
-    const shortHandle = `@${normalizedHandle}`;
-    const longHandle = `@${normalizedHandle}.jackclaw`;
-    const nodeId = `user-${normalizedHandle}`;
-    const existing = directory_1.directoryStore.getProfile(shortHandle) ?? directory_1.directoryStore.getProfile(longHandle);
-    if (!existing) {
-        const profileBase = {
-            nodeId,
-            displayName: String(displayName),
-            role: 'member',
-            publicKey: '',
-            hubUrl: `http://localhost:${process.env.HUB_PORT ?? process.env.PORT ?? 3100}`,
-            capabilities: [],
-            visibility: 'public',
-            createdAt: Date.now(),
-            lastSeen: Date.now(),
-        };
-        directory_1.directoryStore.registerHandle(shortHandle, { ...profileBase, handle: shortHandle });
-        directory_1.directoryStore.registerHandle(longHandle, { ...profileBase, handle: longHandle });
-        // Register in presence so resolveHandle works
-        presence_1.presenceManager.setOnline(nodeId);
+    if (directory_1.directoryStore.getProfile(normalizedHandle)) {
+        res.status(409).json({ error: 'handle_exists', message: `${normalizedHandle} 已存在` });
+        return;
     }
-    res.status(201).json(result);
+    const resolvedDisplayName = typeof displayName === 'string' && displayName.trim().length > 0
+        ? displayName.trim().slice(0, 64)
+        : normalizedHandle.slice(1);
+    const nodeId = `public-user-${crypto_1.default.randomBytes(8).toString('hex')}`;
+    const now = Date.now();
+    directory_1.directoryStore.registerHandle(normalizedHandle, {
+        nodeId,
+        handle: normalizedHandle,
+        displayName: resolvedDisplayName,
+        role: 'member',
+        publicKey: '',
+        hubUrl: typeof hubUrl === 'string' && hubUrl.trim().length > 0
+            ? hubUrl.trim()
+            : `http://localhost:${process.env.HUB_PORT ?? process.env.PORT ?? 3100}`,
+        capabilities: ['human'],
+        visibility: 'public',
+        createdAt: now,
+        lastSeen: now,
+    });
+    res.status(201).json({
+        token: issueUserToken(normalizedHandle, resolvedDisplayName),
+        user: {
+            handle: normalizedHandle,
+            displayName: resolvedDisplayName,
+            agentNodeId: nodeId,
+            createdAt: now,
+            updatedAt: now,
+        },
+    });
 }));
 // POST /api/auth/login
 router.post('/login', asyncRoute(async (req, res) => {

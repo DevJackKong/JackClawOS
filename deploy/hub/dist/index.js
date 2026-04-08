@@ -29,6 +29,7 @@ httpServer.listen(PORT, '0.0.0.0', () => {
     console.log(`  GET  /api/nodes        - List nodes (JWT)`);
     console.log(`  GET  /api/summary      - Daily summary (JWT)`);
     console.log(`  POST /api/chat/send    - ClawChat send message`);
+    console.log(`  POST /api/agent/session - Agent Session Protocol (ASP)`);
     console.log(`  GET  /api/chat/inbox   - Pull offline messages`);
     console.log(`  WS   /chat/ws          - ClawChat realtime`);
     console.log(`  POST /api/ask          - Ask any LLM via node gateway`);

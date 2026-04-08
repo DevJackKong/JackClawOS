@@ -21,7 +21,40 @@
  *           "*" matches everything
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.eventBus = exports.EventBus = void 0;
+exports.eventBus = exports.EventBus = exports.HubEvents = void 0;
+/**
+ * Standard Hub event type constants / Hub 标准事件类型常量。
+ *
+ * 用法 / Usage:
+ *   eventBus.emit(HubEvents.MSG_RECEIVED, payload)
+ *   eventBus.on(HubEvents.TASK_COMPLETED, handler)
+ */
+exports.HubEvents = {
+    MSG_RECEIVED: 'msg.received',
+    MSG_SENT: 'msg.sent',
+    MSG_ACKED: 'msg.acked',
+    MSG_FAILED: 'msg.failed',
+    TASK_CREATED: 'task.created',
+    TASK_ASSIGNED: 'task.assigned',
+    TASK_STARTED: 'task.started',
+    TASK_COMPLETED: 'task.completed',
+    TASK_FAILED: 'task.failed',
+    APPROVAL_REQUESTED: 'approval.requested',
+    APPROVAL_APPROVED: 'approval.approved',
+    APPROVAL_REJECTED: 'approval.rejected',
+    MEMORY_UPDATED: 'memory.updated',
+    MEMORY_SYNCED: 'memory.synced',
+    USER_ONLINE: 'user.online',
+    USER_OFFLINE: 'user.offline',
+    PLUGIN_LOADED: 'plugin.loaded',
+    PLUGIN_UNLOADED: 'plugin.unloaded',
+    TENANT_CREATED: 'tenant.created',
+    TENANT_UPDATED: 'tenant.updated',
+    ORG_CREATED: 'org.created',
+    MEMBER_ADDED: 'member.added',
+    MEMBER_REMOVED: 'member.removed',
+    ROLE_ASSIGNED: 'role.assigned',
+};
 class EventBus {
     subscriptions = new Map();
     wildcardSubs = [];
@@ -47,6 +80,48 @@ class EventBus {
             this.subscriptions.set(pattern, existing);
         }
         return id;
+    }
+    /**
+     * Subscribe once: auto-unsubscribe after the first matched event.
+     * 单次订阅：命中一次后自动取消订阅。
+     *
+     * @param pattern Event type or wildcard / 事件类型或通配符
+     * @param handler One-time callback / 只执行一次的回调
+     * @param pluginName Optional plugin identifier / 可选插件标识
+     * @returns Subscription ID / 订阅 ID
+     */
+    once(pattern, handler, pluginName) {
+        let subId = '';
+        const wrappedHandler = async (event) => {
+            this.off(subId);
+            await handler(event);
+        };
+        subId = this.on(pattern, wrappedHandler, pluginName);
+        return subId;
+    }
+    /**
+     * Wait for the next event matching the pattern.
+     * 等待下一个匹配 pattern 的事件。
+     *
+     * @param pattern Event type or wildcard / 事件类型或通配符
+     * @param timeoutMs Optional timeout in milliseconds / 可选超时时间（毫秒）
+     * @returns Promise resolved with the matched event / 返回命中事件的 Promise
+     */
+    waitFor(pattern, timeoutMs) {
+        return new Promise((resolve, reject) => {
+            let timer;
+            const subId = this.once(pattern, event => {
+                if (timer)
+                    clearTimeout(timer);
+                resolve(event);
+            });
+            if (typeof timeoutMs === 'number' && timeoutMs > 0) {
+                timer = setTimeout(() => {
+                    this.off(subId);
+                    reject(new Error(`[event-bus] waitFor timeout for pattern: ${pattern}`));
+                }, timeoutMs);
+            }
+        });
     }
     /**
      * Unsubscribe by subscription ID.
@@ -115,6 +190,34 @@ class EventBus {
         }
     }
     /**
+     * Emit an event and wait for all matching handlers to finish.
+     * 异步发布事件：等待所有匹配 handler 执行完成后再返回。
+     *
+     * 与 emit 不同，emitAsync 会聚合并等待所有异步/同步 handler。
+     * Unlike emit(), emitAsync() awaits all matching handlers.
+     */
+    async emitAsync(type, data, source) {
+        const event = { type, data, ts: Date.now(), source };
+        // Log event / 记录事件
+        this.eventLog.push(event);
+        if (this.eventLog.length > this.MAX_LOG) {
+            this.eventLog = this.eventLog.slice(-this.MAX_LOG / 2);
+        }
+        const pending = [];
+        // Exact match subscribers / 精确匹配订阅
+        const exact = this.subscriptions.get(type) ?? [];
+        for (const sub of exact) {
+            pending.push(this._safeCallAsync(sub, event));
+        }
+        // Wildcard subscribers / 通配符订阅
+        for (const sub of this.wildcardSubs) {
+            if (this._matchesWildcard(sub.pattern, type)) {
+                pending.push(this._safeCallAsync(sub, event));
+            }
+        }
+        await Promise.all(pending);
+    }
+    /**
      * Get recent events (for debugging / observability).
      */
     getRecentEvents(limit = 50) {
@@ -141,6 +244,18 @@ class EventBus {
         }
         catch (err) {
             console.error(`[event-bus] Sync handler error in ${sub.pluginName ?? sub.id} for ${event.type}:`, err);
+        }
+    }
+    /**
+     * Safe async handler execution used by emitAsync.
+     * emitAsync 使用的安全异步调用，保证单个 handler 异常不会中断整体派发。
+     */
+    async _safeCallAsync(sub, event) {
+        try {
+            await sub.handler(event);
+        }
+        catch (err) {
+            console.error(`[event-bus] Async handler error in ${sub.pluginName ?? sub.id} for ${event.type}:`, err);
         }
     }
     _matchesWildcard(pattern, type) {

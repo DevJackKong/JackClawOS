@@ -2,6 +2,8 @@ export interface UserRecord {
     handle: string;
     displayName: string;
     email?: string;
+    tenantId?: string;
+    orgId?: string;
     passwordHash: string;
     passwordSalt: string;
     agentNodeId: string;
@@ -20,7 +22,7 @@ export declare class UserStore {
      *  jack@jackclaw.ai → jack
      */
     normalizeHandle(raw: string): string;
-    register(handle: string, password: string, displayName: string, email?: string): Promise<{
+    register(handle: string, password: string, displayName: string, email?: string, tenantId?: string, orgId?: string): Promise<{
         token: string;
         user: PublicUser;
     }>;

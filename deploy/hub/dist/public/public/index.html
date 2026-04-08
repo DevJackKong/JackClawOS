@@ -134,8 +134,16 @@ async function refresh() {
 
   // Nodes
   const nodes = await api('GET', '/api/nodes', null, ceoToken);
+  // Invalid token (hub restarted with new secret) — clear and re-register next cycle
+  if (nodes.s === 401 || nodes.s === 403) {
+    ceoToken = ''; localStorage.removeItem('jc-ceo-token');
+  }
   const nodeList = document.getElementById('node-list');
   const nodeArr = nodes.b?.nodes || [];
+  // Hub DB was wiped (restart without volume) — our token is valid but node is gone
+  if (ceoToken && !nodeArr.find(n => n.nodeId === 'dashboard-ceo')) {
+    ceoToken = ''; localStorage.removeItem('jc-ceo-token');
+  }
   document.querySelector('#node-count .stat').textContent = nodeArr.length;
   if (nodeArr.length === 0) {
     nodeList.innerHTML = '<div class="empty">No nodes registered yet</div>';
@@ -202,9 +210,13 @@ async function refresh() {
 
   // Update chat node selector
   const sel = document.getElementById('chat-to');
-  if (sel && nodeArr.length > 0) {
-    const current = sel.value;
-    sel.innerHTML = nodeArr.map(n => '<option value="'+n.nodeId+'"'+(n.nodeId===current?' selected':'')+'>'+n.name+'</option>').join('');
+  if (sel) {
+    if (nodeArr.length === 0) {
+      sel.innerHTML = '<option value="">No nodes registered</option>';
+    } else {
+      const current = sel.value;
+      sel.innerHTML = nodeArr.map(n => '<option value="'+n.nodeId+'"'+(n.nodeId===current?' selected':'')+'>'+n.name+'</option>').join('');
+    }
   }
 }
 

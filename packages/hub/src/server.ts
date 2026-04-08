@@ -53,6 +53,7 @@ import interactionTraceRoute from './routes/interaction-trace'
 import chatContextRoute from './routes/chat-context'
 import taskStateRoute from './routes/task-state'
 import approvalRoute from './routes/approval'
+import webhookRoute from './routes/webhooks'
 import { initFederationManager } from './federation'
 import { initEventIntegration } from './services/event-integration'
 import { JWTPayload } from './types'
@@ -284,6 +285,7 @@ export function createServer(): Application {
   app.use('/api/contacts', contactsRoute)
   app.use('/api/dashboard', dashboardRoute)
   app.use('/api/notifications', notificationsRoute)
+  app.use('/api/webhooks', webhookRoute)
   app.use('/api/config', configRoute)
   app.use('/api/traces', interactionTraceRoute)
   app.use('/api/chat-context', chatContextRoute)

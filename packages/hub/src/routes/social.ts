@@ -33,6 +33,7 @@ import { presenceManager } from '../presence'
 import { offlineQueue } from '../store/offline-queue'
 import { directoryStore } from '../store/directory'
 import { normalizeAgentAddress, parseHandle } from '@jackclaw/protocol'
+import { queueWebhookEvent } from './webhooks'
 
 // Lazy import to avoid circular dependencies at module load time
 function getFedMgr() {
@@ -187,6 +188,15 @@ function deliverSocialMsg(msg: SocialMessage): void {
   const parsed = parseHandle(msg.toAgent)
   const queueHandle = parsed ? `@${parsed.local}` : msg.toAgent
 
+  queueWebhookEvent(msg.toAgent, 'message', {
+    id: msg.id,
+    fromAgent: msg.fromAgent,
+    toAgent: msg.toAgent,
+    content: msg.content,
+    type: msg.type,
+    ts: msg.ts,
+  })
+
   if (!nodeId) {
     // Agent not registered — queue by handle; will be drained when they register+connect
     offlineQueue.enqueue(queueHandle, { event: 'social', data: msg })
@@ -337,6 +347,8 @@ router.post('/contact', (req: Request, res: Response) => {
   requests[req2.id] = req2
   saveJSON(SOCIAL_REQUESTS_FILE, requests)
 
+  queueWebhookEvent(req2.toAgent, 'contact_request', req2)
+
   // Notify target via WS or queue
   const { nodeId: toNodeId, wsConnected } = presenceManager.resolveHandle(body.toAgent)
   if (toNodeId && wsConnected) {
@@ -380,6 +392,7 @@ router.post('/contact/respond', (req: Request, res: Response) => {
 
   // Notify requester via WS or queue
   const responsePayload = { requestId: body.requestId, decision: body.decision, message: body.message }
+  queueWebhookEvent(cr.fromAgent, 'contact_response', responsePayload)
   const { nodeId: fromNodeId, wsConnected } = presenceManager.resolveHandle(cr.fromAgent)
   if (fromNodeId && wsConnected) {
     pushToNodeWs(fromNodeId, 'social_contact_response', responsePayload)

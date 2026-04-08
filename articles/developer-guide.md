@@ -361,7 +361,7 @@ jackclaw start
 
 **协议**: MIT（免费，随便用）
 
-**一个人，五十个 AI 员工。这就是 JackClaw。🦞**
+**一个人，几百个 AI 员工。这就是 JackClaw。🦞**
 
 ---
 

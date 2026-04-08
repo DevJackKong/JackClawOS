@@ -83,7 +83,7 @@ jackclaw start
 # 3. Hub 自动在 :3100 启动，Node 自动在 :19000 启动并注册
 
 # 4. 给 AI 派活
-jackclaw chat --to \@worker --text "帮我写一个 Express REST API"
+jackclaw chat --to @worker --text "帮我写一个 Express REST API"
 
 # 5. 查看状态
 jackclaw status
@@ -144,8 +144,8 @@ JackClaw：任意两个 Agent 随时握手，干完活各回各家。
 ```typescript
 // 发起协作
 const session = await collab.start({
-  from: '\@alice',
-  to: '\@bob',
+  from: '@alice',
+  to: '@bob',
   topic: '重构用户认证模块',
   scope: 'peer'  // 只共享这次协作相关的记忆
 });
@@ -164,12 +164,12 @@ await session.end('snapshot');  // 存为独立文件，随时可删
 
 Agent A 教 Agent B 一个技能，B 学到了新知识。但：
 - A 的记忆不变（教别人不会让你忘记）
-- B 的新知识带 `source: \@agentA` 标记（知识溯源）
+- B 的新知识带 `source: @agentA` 标记（知识溯源）
 - 教学内容在隔离沙箱中，不自动写入 B 的长期记忆
 
 ```typescript
 // B 向 A 请求学习
-const teaching = await collab.learnFrom('\@alice', 'kubernetes-deployment');
+const teaching = await collab.learnFrom('@alice', 'kubernetes-deployment');
 
 // 教学结束后选择
 await teaching.end('archive');  // 将学到的知识合并到自己的 L2
@@ -212,14 +212,14 @@ Agent 提交请求 → Hub 拦截 → 推送到你的飞书/微信/Telegram
 
 ---
 
-## 第五章：\@handle 身份寻址
+## 第五章：@handle 身份寻址
 
-每个 Agent 有全局唯一的 \@handle：
+每个 Agent 有全局唯一的 @handle：
 
 ```
-\@alice              → 组织内简写
-\@alice.myorg        → 跨组织
-\@cto.acme.jackclaw  → 全局唯一
+@alice              → 组织内简写
+@alice.myorg        → 跨组织
+@cto.acme.jackclaw  → 全局唯一
 ```
 
 信任等级通过合作积累（不能算法生成）：
@@ -231,16 +231,16 @@ unknown → contact → colleague → trusted
 
 ```bash
 # 注册身份
-jackclaw identity register \@alice
+jackclaw identity register @alice
 
 # 查找 Agent
-jackclaw identity lookup \@bob
+jackclaw identity lookup @bob
 
 # 发起协作
-jackclaw mention \@bob --topic "帮我 review 这个 PR"
+jackclaw mention @bob --topic "帮我 review 这个 PR"
 
 # 发起教学（教学记忆隔离）
-jackclaw mention \@bob --topic "教我写 Kubernetes YAML" --teaching --clear-memory
+jackclaw mention @bob --topic "教我写 Kubernetes YAML" --teaching --clear-memory
 ```
 
 ---
@@ -259,7 +259,7 @@ jackclaw mention \@bob --topic "教我写 Kubernetes YAML" --teaching --clear-me
 
 ```bash
 # 终端聊天
-jackclaw chat --to \@alice --text "今天的进度怎么样？"
+jackclaw chat --to @alice --text "今天的进度怎么样？"
 
 # 查看消息
 jackclaw chat --inbox
@@ -322,7 +322,7 @@ const response = await gateway.chat({
 - Hub + Node 端到端联调
 - Dashboard 实时控制台
 - ClawChat 加密通信
-- \@handle 身份寻址
+- @handle 身份寻址
 - LLM Gateway 16 家供应商
 
 ### v0.2.0（进行中）
@@ -361,7 +361,7 @@ jackclaw start
 
 **协议**: MIT（免费，随便用）
 
-**一个人，五十个 AI 员工。这就是 JackClaw。🦞**
+**一个人，几百个 AI 员工。这就是 JackClaw。🦞**
 
 ---
 

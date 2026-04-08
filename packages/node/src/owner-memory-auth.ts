@@ -12,7 +12,7 @@
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
-import { randomUUID, createHash } from 'crypto'
+import { randomUUID, createHash, randomBytes } from 'crypto'
 import type { OwnerMemoryType, OwnerMemoryEntry } from './owner-memory'
 
 // ─── 授权范围 ─────────────────────────────────────────────────────────────────
@@ -51,6 +51,7 @@ export interface AuthGrant {
   accessCount: number
   active: boolean             // 是否有效（撤销后 false）
   userNote?: string           // 用户备注（"给我的台灯用"）
+  clientSecret: string        // SECURITY: cryptographically random secret, generated at grant creation
 }
 
 export interface AuthRequest {
@@ -129,6 +130,7 @@ export class OwnerMemoryAuth {
       accessCount: 0,
       active: true,
       userNote: opts?.userNote,
+      clientSecret: randomBytes(32).toString('hex'),  // SECURITY: cryptographically random
     }
 
     this.grants.set(grant.grantId, grant)
@@ -189,11 +191,10 @@ export class OwnerMemoryAuth {
     if (!grant || !grant.active) throw new Error('Invalid or revoked grant')
     if (Date.now() > grant.expiresAt) throw new Error('Grant expired')
 
-    // 简单验证：clientSecret = SHA256(clientId + grantId)
-    const expected = createHash('sha256')
-      .update(grant.clientId + grantId)
-      .digest('hex')
-    if (clientSecret !== expected) throw new Error('Invalid client secret')
+    // SECURITY: validate against the cryptographically random secret stored in the grant
+    if (!grant.clientSecret || clientSecret !== grant.clientSecret) {
+      throw new Error('Invalid client secret')
+    }
 
     const token: AccessToken = {
       token: randomUUID(),

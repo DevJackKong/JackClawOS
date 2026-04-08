@@ -33,10 +33,8 @@ RUN npm run build --workspace=packages/protocol \
 # ── Stage 2: Production ──────────────────────────────────────────
 FROM node:20-alpine AS production
 
-# NOTE: Non-root user disabled — Railway mounts persistent volumes as root, which
-# prevents the jackclaw user from writing to /data. Running as root is safe on Railway
-# since platform-level container isolation handles security.
-# RUN addgroup -S jackclaw && adduser -S jackclaw -G jackclaw
+# SECURITY: run as non-root user
+RUN addgroup -S jackclaw && adduser -S jackclaw -G jackclaw
 
 WORKDIR /app
 
@@ -58,7 +56,10 @@ COPY --from=builder /app/packages/node/package.json  packages/node/
 
 # Persistent data directory — mount a Railway Volume here
 # HOME=/data means ~/.jackclaw/ → /data/.jackclaw/ (identity + config survive restarts)
-RUN mkdir -p /data
+RUN mkdir -p /data && chown -R jackclaw:jackclaw /data
+
+# Switch to non-root user
+USER jackclaw
 
 EXPOSE 19000
 

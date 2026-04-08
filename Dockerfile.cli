@@ -46,6 +46,9 @@ RUN npm run build --workspace=packages/protocol \
 # ── Stage 2: CLI image ───────────────────────────────────────────
 FROM node:20-alpine
 
+# SECURITY: run as non-root user
+RUN addgroup -S jackclaw && adduser -S jackclaw -G jackclaw
+
 WORKDIR /app
 
 # Copy workspace root
@@ -79,7 +82,9 @@ RUN npm install -g /app/packages/cli
 
 # Config and data live here — mount a volume to persist across container runs:
 #   docker run -it --rm -v jackclaw-data:/data jackclaw-cli
-RUN mkdir -p /data
+RUN mkdir -p /data && chown -R jackclaw:jackclaw /data
 ENV HOME=/data
+
+USER jackclaw
 
 CMD ["/bin/sh"]

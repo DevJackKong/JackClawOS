@@ -12,6 +12,54 @@ import { WorkloadTracker } from './workload-tracker'
 import { getPerformanceLedger } from './performance-ledger'
 import { getNodeGateway } from './llm-gateway'
 import type { NodeChatClient } from './chat-client'
+import { createHmac, timingSafeEqual } from 'crypto'
+
+/**
+ * Node API authentication middleware.
+ * Validates Bearer token against HMAC(nodeId, NODE_API_SECRET).
+ * Skips /health and /api/ping (read-only, no sensitive data).
+ */
+function createAuthMiddleware(identity: NodeIdentity) {
+  const secret = process.env.NODE_API_SECRET
+  return (req: Request, res: Response, next: NextFunction): void => {
+    // Public endpoints — no auth required
+    if (req.path === '/health' || req.path === '/api/ping') {
+      next(); return
+    }
+
+    if (!secret) {
+      console.error('[auth] NODE_API_SECRET not set — rejecting all authenticated requests. Set NODE_API_SECRET env var.')
+      res.status(503).json({ error: 'Node API authentication not configured' })
+      return
+    }
+
+    const authHeader = req.headers.authorization
+    if (!authHeader?.startsWith('Bearer ')) {
+      res.status(401).json({ error: 'Missing or invalid Authorization header' })
+      return
+    }
+
+    const token = authHeader.slice(7)
+    const expected = createHmac('sha256', secret)
+      .update(identity.nodeId)
+      .digest('hex')
+
+    // Constant-time comparison to prevent timing attacks
+    try {
+      const tokenBuf = Buffer.from(token, 'utf-8')
+      const expectedBuf = Buffer.from(expected, 'utf-8')
+      if (tokenBuf.length !== expectedBuf.length || !timingSafeEqual(tokenBuf, expectedBuf)) {
+        res.status(403).json({ error: 'Invalid API token' })
+        return
+      }
+    } catch {
+      res.status(403).json({ error: 'Invalid API token' })
+      return
+    }
+
+        next()
+  }
+}
 
 // Harness runner 接口（运行时注入，避免编译期跨包依赖）
 export type HarnessRunner = (opts: {
@@ -29,6 +77,9 @@ export function registerHarnessRunner(runner: HarnessRunner): void {
 
 export function createServer(identity: NodeIdentity, config: JackClawConfig, chatClient?: NodeChatClient) {  const app = express()
   app.use(express.json({ limit: '1mb' }))
+
+  // SECURITY: authenticate all non-public endpoints
+  app.use(createAuthMiddleware(identity))
 
   // Workload tracker — scoped to this server instance
   const workloadTracker = new WorkloadTracker(identity.nodeId)
@@ -140,23 +191,11 @@ export function createServer(identity: NodeIdentity, config: JackClawConfig, cha
       return
     }
 
-    // Hub must identify itself; for now we trust messages from 'hub'
-    // In production, store Hub's public key in config
+    // SECURITY: Hub public key is REQUIRED — refuse unverified tasks
     const hubPublicKey: string | undefined = (config as any).hubPublicKey
     if (!hubPublicKey) {
-      // Accept without verification if Hub key not configured (dev mode)
-      console.warn('[server] Hub public key not configured — skipping signature verification')
-      try {
-        const raw: EncryptedPayload = JSON.parse(msg.payload)
-        const plaintext: string = decrypt(raw, identity.privateKey)
-        const task = JSON.parse(plaintext) as TaskPayload
-        console.log(`[server] Received task: ${task.taskId} — ${task.action}`)
-        handleTask(task, identity, config)
-        res.json({ status: 'accepted', taskId: task.taskId })
-      } catch (err: any) {
-        console.error('[server] Failed to process task:', err.message)
-        res.status(422).json({ error: 'Failed to process task' })
-      }
+      console.error('[server] SECURITY: hubPublicKey not configured — rejecting task. Set hubPublicKey in node config.')
+      res.status(403).json({ error: 'Hub public key not configured — cannot verify task origin. Set hubPublicKey in config.' })
       return
     }
 

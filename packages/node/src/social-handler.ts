@@ -29,6 +29,8 @@ export interface SocialHandlerOptions {
   aiClient?: AiClient
   /** OwnerMemory 实例，用于记录情绪模式 */
   ownerMemory?: OwnerMemory
+  /** Auth token for Hub API */
+  token?: string
 }
 
 export class SocialHandler {
@@ -260,7 +262,7 @@ export class SocialHandler {
 
     const res = await fetch(`${this.opts.hubUrl}/api/social/reply`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...(this.opts.token ? { Authorization: `Bearer ${this.opts.token}` } : {}) },
       body: JSON.stringify({
         replyToId: opts.replyToId,
         fromHuman: opts.fromHuman,

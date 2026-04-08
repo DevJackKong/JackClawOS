@@ -1,6 +1,6 @@
 # @jackclaw/cli
 
-JackClaw CLI management tool — manage encrypted org-node identities, Hub connections, and scheduled reports.
+JackClaw CLI management tool — manage Hub deployment, logs, status, nodes, and configuration.
 
 ## Install
 
@@ -10,40 +10,35 @@ npm install -g @jackclaw/cli
 npm run build --workspace=packages/cli
 ```
 
-## Commands
+## Ops Commands
 
-### `jackclaw init`
-Initialize this machine as an JackClaw node. Generates an Ed25519 key pair and creates `~/.jackclaw/config.json`.
+### `jackclaw deploy`
+Deploy Hub to Railway. Checks Railway CLI, then runs `railway up`.
 
 ```bash
-jackclaw init
-jackclaw init --name "my-server" --role hub
+jackclaw deploy
+jackclaw deploy --cwd /path/to/repo
 ```
 
-### `jackclaw invite <hub-url>`
-Register this node with a Hub. Sends public key, receives auth token.
+### `jackclaw logs`
+View Hub logs. Tries `GET /api/audit` first, falls back to `railway logs`.
 
 ```bash
-jackclaw invite https://hub.example.com
+jackclaw logs
+jackclaw logs --json
+jackclaw logs --railway
 ```
 
 ### `jackclaw status`
-Display node identity, Hub connection status, last/next report times.
+Show Hub status via `/health` and `/health/detailed`.
 
 ```bash
 jackclaw status
-```
-
-### `jackclaw report [--now] [--dry-run]`
-Send a report to the Hub immediately.
-
-```bash
-jackclaw report --now
-jackclaw report --now --dry-run   # preview without sending
+jackclaw status --json
 ```
 
 ### `jackclaw nodes`
-List all registered nodes (Hub role only). Calls `GET /api/nodes`.
+List all connected nodes via `GET /api/nodes`.
 
 ```bash
 jackclaw nodes
@@ -51,16 +46,14 @@ jackclaw nodes --json
 ```
 
 ### `jackclaw config [key] [value]`
-View or modify configuration.
+View or modify config such as `hubUrl` and `apiKey`.
 
 ```bash
-jackclaw config                          # show all
-jackclaw config reportSchedule           # read one
-jackclaw config reportSchedule "0 9 * * *"   # set one
-jackclaw config visibility full
+jackclaw config
+jackclaw config hubUrl
+jackclaw config hubUrl https://hub.jackclaw.ai
+jackclaw config apiKey sk-xxx
 ```
-
-**Editable keys:** `name`, `role`, `hubUrl`, `reportSchedule`, `visibility`
 
 ## Config file
 
@@ -76,6 +69,10 @@ jackclaw config visibility full
   "visibility": "summary_only"
 }
 ```
+
+API key/token is stored in:
+
+`~/.jackclaw/state.json`
 
 ## Tech Stack
 

@@ -1,6 +1,6 @@
 // ChatInput — 消息输入区：多行文本，Enter 发送，文件上传，表情，语音预留
 
-import React, { useCallback, useRef } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 
 type MsgType = 'human' | 'task' | 'ask';
 
@@ -13,6 +13,7 @@ interface Props {
   msgType: MsgType;
   onMsgTypeChange: (t: MsgType) => void;
   onEmojiClick: () => void;
+  onTyping?: (isTyping: boolean) => void;
 }
 
 const MSG_TYPES: { id: MsgType; label: string }[] = [
@@ -30,27 +31,42 @@ export const ChatInput: React.FC<Props> = ({
   msgType,
   onMsgTypeChange,
   onEmojiClick,
+  onTyping,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const emitTyping = useCallback(() => {
+    if (!onTyping || disabled) return;
+    onTyping(true);
+    if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+    typingTimerRef.current = setTimeout(() => onTyping(false), 3000);
+  }, [disabled, onTyping]);
+
+  useEffect(() => () => {
+    if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+  }, []);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
+      if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+      onTyping?.(false);
       onSend();
+      return;
     }
-  }, [onSend]);
+    emitTyping();
+  }, [emitTyping, onSend, onTyping]);
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    // Insert file reference as placeholder text
     onChange(value + `[file] ${file.name}`);
     e.target.value = '';
   }
 
   return (
     <div className="ci-wrap">
-      {/* Message type selector */}
       <div className="ci-toolbar">
         <div className="ci-types">
           {MSG_TYPES.map(t => (
@@ -64,7 +80,6 @@ export const ChatInput: React.FC<Props> = ({
           ))}
         </div>
         <div className="ci-actions">
-          {/* File upload */}
           <button
             className="ci-action-btn"
             title="上传文件"
@@ -79,7 +94,6 @@ export const ChatInput: React.FC<Props> = ({
             style={{ display: 'none' }}
             onChange={handleFileChange}
           />
-          {/* Emoji */}
           <button
             className="ci-action-btn"
             title="表情"
@@ -88,7 +102,6 @@ export const ChatInput: React.FC<Props> = ({
           >
             😊
           </button>
-          {/* Voice — reserved */}
           <button
             className="ci-action-btn ci-btn-muted"
             title="语音消息（即将推出）"
@@ -99,12 +112,14 @@ export const ChatInput: React.FC<Props> = ({
         </div>
       </div>
 
-      {/* Text area + send button row */}
       <div className="ci-input-row">
         <textarea
           className="ci-textarea"
           value={value}
-          onChange={e => onChange(e.target.value)}
+          onChange={e => {
+            onChange(e.target.value);
+            emitTyping();
+          }}
           onKeyDown={handleKeyDown}
           placeholder={disabled && !sending ? '请先选择节点' : '输入消息… (Enter 发送, Shift+Enter 换行)'}
           disabled={disabled}
@@ -112,7 +127,11 @@ export const ChatInput: React.FC<Props> = ({
         />
         <button
           className={`ci-send-btn ${sending ? 'ci-send-loading' : ''}`}
-          onClick={onSend}
+          onClick={() => {
+            if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+            onTyping?.(false);
+            onSend();
+          }}
           disabled={disabled || sending || !value.trim()}
           title="发送 (Enter)"
         >

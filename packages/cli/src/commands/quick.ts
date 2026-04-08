@@ -10,7 +10,14 @@
 import { Command } from 'commander'
 import axios from 'axios'
 import chalk from 'chalk'
-import { loadConfig } from '../config-utils'
+import { loadConfig, loadState } from '../config-utils'
+
+function authHeaders(): Record<string, string> {
+  const state = loadState()
+  if (state.token) return { Authorization: `Bearer ${state.token}` }
+  if (state.apiKey) return { Authorization: `Bearer ${state.apiKey}` }
+  return {}
+}
 
 function getHub(opts: Record<string, any>): string {
   const cfg = loadConfig()
@@ -52,7 +59,7 @@ export function registerQuickCommands(program: Command): void {
           toAgent: to,
           content: message,
           type: 'text',
-        })
+        }, { headers: authHeaders() })
         console.log(`✅ Sent to ${chalk.cyan(to)}`)
       } catch (err: any) {
         const msg = err.response?.data?.error ?? err.message
@@ -77,6 +84,7 @@ export function registerQuickCommands(program: Command): void {
       try {
         const res = await axios.get(`${hub}/api/social/messages`, {
           params: { agentHandle: handle, limit: opts.n || 10 },
+          headers: authHeaders(),
         })
         const msgs = res.data.messages || []
         if (msgs.length === 0) {

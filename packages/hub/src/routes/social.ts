@@ -47,7 +47,59 @@ function getFedMgr() {
 
 const router = Router()
 
-// ─── Storage (contacts, requests, profiles remain file-backed) ────────────────
+function getAuthedAgentHandle(req: Request): string | null {
+  const handle = req.jwtPayload?.role === 'user' && typeof req.jwtPayload.nodeId !== 'string'
+    ? (req.jwtPayload as { handle?: string }).handle
+    : null
+  if (!handle) return null
+  return typeof handle === 'string' && handle.startsWith('@') ? handle : `@${handle}`
+}
+
+function getRequestedAgentHandle(req: Request): string | null {
+  const fromQuery = req.query.agentHandle
+  if (typeof fromQuery !== 'string' || !fromQuery.trim()) return null
+  return fromQuery.trim()
+}
+
+function requireAuthorizedAgentHandle(req: Request, res: Response): string | null {
+  const authedHandle = getAuthedAgentHandle(req)
+  const requestedHandle = getRequestedAgentHandle(req)
+
+  if (!authedHandle) {
+    if (!requestedHandle) {
+      res.status(400).json({ error: 'agentHandle required' })
+      return null
+    }
+    return requestedHandle
+  }
+
+  if (requestedHandle && requestedHandle !== authedHandle) {
+    res.status(403).json({ error: 'forbidden', message: '不能访问其他 handle 的社交数据' })
+    return null
+  }
+
+  return authedHandle
+}
+
+function requireAuthorizedFromAgent(req: Request, res: Response, fromAgent?: string): string | null {
+  const authedHandle = getAuthedAgentHandle(req)
+  if (!authedHandle) {
+    if (!fromAgent) {
+      res.status(400).json({ error: 'fromAgent required' })
+      return null
+    }
+    return fromAgent
+  }
+
+  if (!fromAgent) return authedHandle
+  if (fromAgent !== authedHandle) {
+    res.status(403).json({ error: 'forbidden', message: '不能冒用其他 handle 发消息' })
+    return null
+  }
+  return authedHandle
+}
+
+// ─── Storage (contacts, requests, profiles remain file-backed) ─────────────────
 
 const HUB_DIR               = path.join(process.env.HOME || '~', '.jackclaw', 'hub')
 const SOCIAL_CONTACTS_FILE  = path.join(HUB_DIR, 'social-contacts.json')
@@ -70,7 +122,7 @@ let contacts: Record<string, string[]>       = loadJSON(SOCIAL_CONTACTS_FILE, {}
 let requests: Record<string, ContactRequest> = loadJSON(SOCIAL_REQUESTS_FILE, {})
 let profiles: Record<string, SocialProfile>  = loadJSON(SOCIAL_PROFILES_FILE, {})
 
-// ─── SocialMessage ↔ StoredMessage adapters ───────────────────────────────────
+// ─── SocialMessage ↔ StoredMessage adapters ────────────────────────────────────
 
 function socialToStored(msg: SocialMessage): StoredMessage {
   return {
@@ -104,7 +156,7 @@ function storedToSocial(s: StoredMessage): SocialMessage {
   }
 }
 
-// ─── Thread helper ────────────────────────────────────────────────────────────
+// ─── Thread helper ─────────────────────────────────────────────────────────────
 
 function getOrCreateThread(a: string, b: string): string {
   const key    = [a, b].sort().join('↔')
@@ -117,7 +169,7 @@ function getOrCreateThread(a: string, b: string): string {
   return `thread-${key}-${Date.now()}`
 }
 
-// ─── Deliver helper ───────────────────────────────────────────────────────────
+// ─── Deliver helper ────────────────────────────────────────────────────────────
 
 /**
  * Attempt to deliver a social message to the target agent.
@@ -169,14 +221,20 @@ export function deliverFederatedMessage(msg: SocialMessage): void {
   console.log(`[social/fed] Federated delivery: ${msg.fromAgent} → ${msg.toAgent}`)
 }
 
-// ─── POST /send ───────────────────────────────────────────────────────────────
+// ─── POST /send ────────────────────────────────────────────────────────────────
 
 router.post('/send', async (req: Request, res: Response) => {
   const body = req.body as Partial<SocialMessage>
+  const fromAgent = requireAuthorizedFromAgent(req, res, body.fromAgent)
+  if (!fromAgent) return
 
-  if (!body.fromHuman || !body.fromAgent || !body.toAgent || !body.content) {
-    return res.status(400).json({ error: 'missing_fields', required: ['fromHuman', 'fromAgent', 'toAgent', 'content'] })
+  if (!body.toAgent || !body.content) {
+    return res.status(400).json({ error: 'missing_fields', required: ['toAgent', 'content'] })
   }
+
+  const fromHuman = typeof body.fromHuman === 'string' && body.fromHuman.trim().length > 0
+    ? body.fromHuman
+    : fromAgent.replace(/^@/, '')
 
   // Resolve target profile using both original and canonical forms
   const targetProfile = profiles[body.toAgent] ?? profiles[normalizeAgentAddress(body.toAgent)]
@@ -184,13 +242,13 @@ router.post('/send', async (req: Request, res: Response) => {
     return res.status(403).json({ error: 'contact_policy_closed', message: `${body.toAgent} 不接受外来消息` })
   }
   if (targetProfile?.contactPolicy === 'request') {
-    const myContacts = contacts[body.fromAgent] ?? []
+    const myContacts = contacts[fromAgent] ?? []
     if (!myContacts.includes(body.toAgent)) {
       return res.status(403).json({ error: 'contact_required', message: `需先发送联系请求并被接受` })
     }
   }
 
-  const msgUserId = body.fromAgent
+  const msgUserId = fromAgent
   const msgQuota  = quotaManager.checkQuota(msgUserId, 'maxMessagePerDay')
   if (!msgQuota.allowed) {
     return res.status(429).json({
@@ -200,12 +258,12 @@ router.post('/send', async (req: Request, res: Response) => {
     })
   }
 
-  const thread = body.thread ?? getOrCreateThread(body.fromAgent, body.toAgent)
+  const thread = body.thread ?? getOrCreateThread(fromAgent, body.toAgent)
 
   const msg: SocialMessage = {
     id:        body.id ?? crypto.randomUUID(),
-    fromHuman: body.fromHuman,
-    fromAgent: body.fromAgent,
+    fromHuman,
+    fromAgent,
     toAgent:   body.toAgent,
     toHuman:   body.toHuman,
     content:   body.content,
@@ -249,16 +307,18 @@ router.post('/send', async (req: Request, res: Response) => {
   return res.status(201).json({ status: 'ok', messageId: msg.id, thread })
 })
 
-// ─── POST /contact ────────────────────────────────────────────────────────────
+// ─── POST /contact ─────────────────────────────────────────────────────────────
 
 router.post('/contact', (req: Request, res: Response) => {
   const body = req.body as Partial<ContactRequest>
+  const fromAgent = requireAuthorizedFromAgent(req, res, body.fromAgent)
+  if (!fromAgent) return
 
-  if (!body.fromAgent || !body.toAgent || !body.message) {
-    return res.status(400).json({ error: 'missing_fields', required: ['fromAgent', 'toAgent', 'message'] })
+  if (!body.toAgent || !body.message) {
+    return res.status(400).json({ error: 'missing_fields', required: ['toAgent', 'message'] })
   }
 
-  const myContacts = contacts[body.fromAgent] ?? contacts[normalizeAgentAddress(body.fromAgent)] ?? []
+  const myContacts = contacts[fromAgent] ?? contacts[normalizeAgentAddress(fromAgent)] ?? []
   const toKey = body.toAgent
   if (myContacts.includes(toKey) || myContacts.includes(normalizeAgentAddress(toKey))) {
     return res.status(409).json({ error: 'already_contacts', message: '你们已经是联系人' })
@@ -266,7 +326,7 @@ router.post('/contact', (req: Request, res: Response) => {
 
   const req2: ContactRequest = {
     id:       crypto.randomUUID(),
-    fromAgent: body.fromAgent,
+    fromAgent,
     toAgent:   body.toAgent,
     message:   body.message,
     purpose:   body.purpose ?? '建立联系',
@@ -289,18 +349,20 @@ router.post('/contact', (req: Request, res: Response) => {
   return res.status(201).json({ status: 'ok', requestId: req2.id, request: req2 })
 })
 
-// ─── POST /contact/respond ────────────────────────────────────────────────────
+// ─── POST /contact/respond ─────────────────────────────────────────────────────
 
 router.post('/contact/respond', (req: Request, res: Response) => {
   const body = req.body as ContactResponse
+  const fromAgent = requireAuthorizedFromAgent(req, res, body.fromAgent)
+  if (!fromAgent) return
 
-  if (!body.requestId || !body.fromAgent || !body.decision) {
-    return res.status(400).json({ error: 'missing_fields', required: ['requestId', 'fromAgent', 'decision'] })
+  if (!body.requestId || !body.decision) {
+    return res.status(400).json({ error: 'missing_fields', required: ['requestId', 'decision'] })
   }
 
   const cr = requests[body.requestId]
   if (!cr) return res.status(404).json({ error: 'request_not_found' })
-  if (cr.toAgent !== body.fromAgent) return res.status(403).json({ error: 'not_your_request' })
+  if (cr.toAgent !== fromAgent) return res.status(403).json({ error: 'not_your_request' })
 
   cr.status = body.decision === 'accept' ? 'accepted' : 'declined'
   requests[body.requestId] = cr
@@ -329,23 +391,24 @@ router.post('/contact/respond', (req: Request, res: Response) => {
   return res.json({ status: 'ok', requestId: body.requestId, decision: body.decision })
 })
 
-// ─── GET /contacts ────────────────────────────────────────────────────────────
+// ─── GET /contacts ─────────────────────────────────────────────────────────────
 
 router.get('/contacts', (req: Request, res: Response) => {
-  const { agentHandle } = req.query as { agentHandle?: string }
-  if (!agentHandle) return res.status(400).json({ error: 'agentHandle required' })
+  const agentHandle = requireAuthorizedAgentHandle(req, res)
+  if (!agentHandle) return
 
   const list     = contacts[agentHandle] ?? []
   const enriched = list.map(h => ({ handle: h, profile: profiles[h] ?? null }))
   return res.json({ contacts: enriched, count: list.length })
 })
 
-// ─── GET /messages ────────────────────────────────────────────────────────────
+// ─── GET /messages ─────────────────────────────────────────────────────────────
 
 router.get('/messages', (req: Request, res: Response) => {
-  const { agentHandle, limit: limitStr, offset: offsetStr } = req.query as Record<string, string>
-  if (!agentHandle) return res.status(400).json({ error: 'agentHandle required' })
+  const agentHandle = requireAuthorizedAgentHandle(req, res)
+  if (!agentHandle) return
 
+  const { limit: limitStr, offset: offsetStr } = req.query as Record<string, string>
   const limit  = parseInt(limitStr  ?? '20', 10)
   const offset = parseInt(offsetStr ?? '0',  10)
 
@@ -355,18 +418,16 @@ router.get('/messages', (req: Request, res: Response) => {
   return res.json({ messages: inbox, count: inbox.length })
 })
 
-// ─── POST /profile ────────────────────────────────────────────────────────────
+// ─── POST /profile ─────────────────────────────────────────────────────────────
 
 router.post('/profile', (req: Request, res: Response) => {
   const body = req.body as Partial<SocialProfile>
+  const agentHandle = requireAuthorizedFromAgent(req, res, body.agentHandle)
+  if (!agentHandle) return
 
-  if (!body.agentHandle) {
-    return res.status(400).json({ error: 'agentHandle required' })
-  }
-
-  const existing = profiles[body.agentHandle] ?? {}
+  const existing = profiles[agentHandle] ?? {}
   const profile: SocialProfile = {
-    agentHandle:   body.agentHandle,
+    agentHandle,
     ownerName:     body.ownerName     ?? (existing as any).ownerName     ?? '',
     ownerTitle:    body.ownerTitle    ?? (existing as any).ownerTitle    ?? '',
     bio:           body.bio           ?? (existing as any).bio           ?? '',
@@ -376,10 +437,10 @@ router.post('/profile', (req: Request, res: Response) => {
     updatedAt:     Date.now(),
   }
 
-  profiles[body.agentHandle] = profile
+  profiles[agentHandle] = profile
   saveJSON(SOCIAL_PROFILES_FILE, profiles)
 
-  console.log(`[social] Profile updated: ${body.agentHandle}`)
+  console.log(`[social] Profile updated: ${agentHandle}`)
   return res.json({ status: 'ok', profile })
 })
 
@@ -392,10 +453,10 @@ router.get('/profile/:handle', (req: Request, res: Response) => {
   return res.json({ profile })
 })
 
-// ─── POST /reply ──────────────────────────────────────────────────────────────
+// ─── POST /reply ───────────────────────────────────────────────────────────────
 
 router.post('/reply', (req: Request, res: Response) => {
-  const { replyToId, fromHuman, fromAgent, content, type } = req.body as {
+  const { replyToId, fromHuman, fromAgent: requestedFromAgent, content, type } = req.body as {
     replyToId: string
     fromHuman: string
     fromAgent: string
@@ -403,8 +464,11 @@ router.post('/reply', (req: Request, res: Response) => {
     type?:     SocialMessage['type']
   }
 
-  if (!replyToId || !fromHuman || !fromAgent || !content) {
-    return res.status(400).json({ error: 'missing_fields', required: ['replyToId', 'fromHuman', 'fromAgent', 'content'] })
+  const fromAgent = requireAuthorizedFromAgent(req, res, requestedFromAgent)
+  if (!fromAgent) return
+
+  if (!replyToId || !content) {
+    return res.status(400).json({ error: 'missing_fields', required: ['replyToId', 'content'] })
   }
 
   const original = messageStore.getMessage(replyToId)
@@ -414,7 +478,7 @@ router.post('/reply', (req: Request, res: Response) => {
 
   const msg: SocialMessage = {
     id:        crypto.randomUUID(),
-    fromHuman,
+    fromHuman: fromHuman || fromAgent.replace(/^@/, ''),
     fromAgent,
     toAgent,
     content,
@@ -433,11 +497,11 @@ router.post('/reply', (req: Request, res: Response) => {
   return res.status(201).json({ status: 'ok', messageId: msg.id })
 })
 
-// ─── GET /threads ─────────────────────────────────────────────────────────────
+// ─── GET /threads ──────────────────────────────────────────────────────────────
 
 router.get('/threads', (req: Request, res: Response) => {
-  const { agentHandle } = req.query as { agentHandle?: string }
-  if (!agentHandle) return res.status(400).json({ error: 'agentHandle required' })
+  const agentHandle = requireAuthorizedAgentHandle(req, res)
+  if (!agentHandle) return
 
   const stored = messageStore.getMessagesByParticipant(agentHandle, 1000, 0)
   const myMsgs = stored.map(storedToSocial)
@@ -469,7 +533,7 @@ router.get('/threads', (req: Request, res: Response) => {
   return res.json({ threads, count: threads.length })
 })
 
-// ─── GET /thread/:id — 获取指定会话的完整消息历史 ─────────────────────────────
+// ─── GET /thread/:id — 获取指定会话的完整消息历史 ────────────────────────────────
 
 router.get('/thread/:id', (req: Request, res: Response) => {
   const threadId = decodeURIComponent(req.params.id)

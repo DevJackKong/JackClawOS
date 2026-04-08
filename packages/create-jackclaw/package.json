@@ -1,6 +1,6 @@
 {
   "name": "@jackclaw/create",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Scaffold a JackClaw team project in one command",
   "bin": {
     "create-jackclaw": "./dist/index.js"

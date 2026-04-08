@@ -1,6 +1,6 @@
 {
   "name": "@jackclaw/tunnel",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "JackClaw tunnel management — cloudflared + self-hosted HTTPS",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

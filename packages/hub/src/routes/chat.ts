@@ -16,6 +16,7 @@
  */
 
 import { Router, Request, Response } from 'express'
+import type { JwtPayload } from 'jsonwebtoken'
 import type { WebSocketServer } from 'ws'
 import type { ChatMessage } from '../store/chat'
 import { registerHuman, listHumans } from '../store/human-registry'
@@ -23,6 +24,21 @@ import { chatWorker } from '../chat-worker'
 import { offlineQueue } from '../store/offline-queue'
 
 const router = Router()
+
+
+function getRequesterId(req: Request): string | null {
+  const payload = req.jwtPayload as (JwtPayload & { nodeId?: string; handle?: string; sub?: string }) | undefined
+  return payload?.nodeId ?? payload?.handle ?? payload?.sub ?? null
+}
+
+function getRecallTargets(msg: ChatMessage): string[] {
+  const directTargets = Array.isArray(msg.to) ? msg.to : [msg.to]
+  const group = directTargets.length === 1 ? chatWorker.store.getGroup(directTargets[0]) : null
+  const participants = group
+    ? [msg.from, ...group.members.filter(member => member !== msg.from)]
+    : [msg.from, ...directTargets]
+  return [...new Set(participants)]
+}
 
 // ─── REST 路由 ────────────────────────────────────────────────────────────────
 
@@ -39,6 +55,52 @@ router.post('/send', (req: Request, res: Response) => {
   chatWorker.handleIncoming(msg)
 
   res.json({ status: 'ok', messageId: msg.id })
+})
+
+
+// 撤回消息
+router.delete('/messages/:id', (req: Request, res: Response) => {
+  const requesterId = getRequesterId(req)
+  if (!requesterId) {
+    res.status(401).json({ error: 'Unauthorized' })
+    return
+  }
+
+  const messageId = req.params.id
+  const msg = chatWorker.store.getMessage(messageId)
+  if (!msg) {
+    res.status(404).json({ error: 'Message not found' })
+    return
+  }
+  if (msg.from !== requesterId) {
+    res.status(403).json({ error: 'Only sender can recall message' })
+    return
+  }
+  if (msg.recalled) {
+    res.json({ status: 'ok', message: msg })
+    return
+  }
+  if (Date.now() - msg.ts > 2 * 60 * 1000) {
+    res.status(400).json({ error: 'Recall window expired' })
+    return
+  }
+
+  const recalled = chatWorker.store.recallMessage(messageId, Date.now())
+  if (!recalled) {
+    res.status(500).json({ error: 'Failed to recall message' })
+    return
+  }
+
+  const participants = getRecallTargets(recalled)
+  for (const participant of participants) {
+    chatWorker.pushEvent(participant, 'message_recalled', {
+      id: recalled.id,
+      threadId: recalled.threadId,
+      recalledAt: recalled.recalledAt,
+    })
+  }
+
+  res.json({ status: 'ok', message: recalled })
 })
 
 // 拉取离线消息（Node 上线时调用）

@@ -4,56 +4,69 @@ layout: home
 hero:
   name: JackClaw
   text: 让 AI 员工像真人一样协作
-  tagline: Hub/Node 分布式架构，零学习成本接入，30 秒启动你的 AI 团队
+  tagline: 一个面向 Hub / Node / Agent 的多智能体协作框架，内置 CLI、SDK、REST API 与 Dashboard。
   actions:
     - theme: brand
       text: 快速开始
-      link: /guide/quick-start
+      link: /guide/getting-started
+    - theme: alt
+      text: SDK API
+      link: /api/sdk
     - theme: alt
       text: GitHub
-      link: https://github.com/jackclaw/jackclaw
+      link: https://github.com/DevJackKong/JackClawOS
 
 features:
   - icon: 🧠
-    title: Hub/Node 三角架构
-    details: CEO 节点统筹全局，Hub 广播任务，多个 Node 并行执行——像真实团队一样分工协作。
-
-  - icon: ⚡
-    title: 30 秒快速启动
-    details: 一行命令 `npx jackclaw demo` 即可体验完整的多智能体协作流程，无需任何配置。
-
-  - icon: 🔌
-    title: 插件生态（OpenClaw）
-    details: 通过 OpenClaw 插件系统扩展 AI 能力——Memory、工具链、支付网关开箱即用。
-
-  - icon: 🌐
-    title: 人类在环（Human-in-Loop）
-    details: 关键决策节点自动暂停并等待人类确认，确保 AI 行为在你的掌控之中。
-
-  - icon: 🔒
+    title: 多智能体协作
+    details: Hub 负责调度、汇总与审批，Node 负责执行，Agent 像团队成员一样分工协作。
+  - icon: 🔐
     title: 安全优先
-    details: 内置审计日志、权限隔离、Payment Vault——生产级安全，无需额外配置。
-
+    details: 端到端加密、审计日志、人类审批、高风险操作拦截，默认面向真实生产环境设计。
+  - icon: ⚡
+    title: 30 秒上手
+    details: JackClaw 提供 demo 启动方式，可直接拉起 Hub、Node、Dashboard，快速体验完整工作流。
+  - icon: 🧩
+    title: 可扩展 SDK
+    details: 通过 @jackclaw/sdk 定义插件、节点、命令、定时任务与生命周期钩子。
+  - icon: 💬
+    title: ClawChat 通信层
+    details: Hub 提供 REST + WebSocket，支持离线收件箱、线程、群组、回执与协作会话。
   - icon: 📦
-    title: 15 个精心设计的包
-    details: protocol / hub / node / cli / sdk / harness / watchdog 等模块各司其职，按需组合。
+    title: Monorepo 包体系
+    details: CLI、Hub、Node、Protocol、Memory、SDK、Harness、Tunnel、OpenClaw Plugin 等模块解耦协作。
 ---
 
-## 30 秒快速开始
+## 项目概览
+
+JackClaw 是一个 **开源多智能体协作框架**。
+
+从 README 和 QUICKSTART 可以抽象出 4 个关键事实：
+
+- **Hub 是总部**：负责路由任务、聚合日报、托管审批流与 Dashboard
+- **Node 是员工**：负责执行任务、接入模型、维护私有记忆、对外汇报
+- **CLI 是入口**：`jackclaw demo`、`jackclaw start`、`jackclaw chat`、`jackclaw ask`、`jackclaw task` 构成主要操作面
+- **SDK 是扩展层**：开发者可以定义自定义插件和 Node 能力
+
+## 快速入口
 
 ```bash
-# 全局安装 CLI
-npm install -g jackclaw
-
-# 运行演示（Hub + 两个 Node 自动启动）
-jackclaw demo
-
-# 或直接用 npx，无需安装
+npm install
+npm run build
 npx jackclaw demo
 ```
 
-启动后访问 `http://localhost:3000` 查看 Dashboard，你会看到 AI 员工们正在处理任务。
+启动后默认可访问：
 
----
+- Hub: `http://localhost:3100`
+- Dashboard: `http://localhost:3100`
+- PWA App: `http://localhost:3100/app/`
+- Health: `http://localhost:3100/health`
 
-[查看完整快速开始指南 →](/guide/quick-start)
+## 文档结构
+
+- [快速开始](/guide/getting-started)
+- [核心概念](/guide/concepts)
+- [@jackclaw/sdk API](/api/sdk)
+- [CLI 命令参考](/api/cli)
+- [Hub REST API](/api/rest)

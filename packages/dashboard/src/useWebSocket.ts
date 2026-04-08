@@ -16,29 +16,53 @@ export interface WsMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
   timestamp: number;
+  threadId?: string;
+  read?: boolean;
+  readBy?: string[];
   nodeId?: string;
+  event?: string;
+}
+
+export interface TypingEvent {
+  from: string;
+  to: string;
+  threadId: string;
+  isTyping: boolean;
+  ts: number;
+}
+
+export interface MessageReadEvent {
+  messageId: string;
+  threadId?: string;
+  readBy: string;
+  ts: number;
+}
+
+export interface SendMessageOptions {
+  threadId?: string;
+  to?: string;
 }
 
 export interface UseWebSocketResult {
   messages: WsMessage[];
   socialMessages: SocialMessage[];
-  send: (content: string) => void;
+  typingEvent: TypingEvent | null;
+  send: (content: string, options?: SendMessageOptions) => void;
+  sendTyping: (payload: { threadId: string; to: string; isTyping: boolean }) => void;
+  sendReadReceipt: (payload: { messageId: string }) => void;
   connected: boolean;
   connecting: boolean;
   error: string | null;
   clearMessages: () => void;
 }
 
-/**
- * token: JWT user token — connects via ?token=<jwt> (recommended, auth-verified).
- * Alternatively pass nodeId directly via nodeId param for node clients.
- */
 export function useWebSocket(
   nodeId: string | null,
   token?: string | null,
 ): UseWebSocketResult {
   const [messages, setMessages] = useState<WsMessage[]>([]);
   const [socialMessages, setSocialMessages] = useState<SocialMessage[]>([]);
+  const [typingEvent, setTypingEvent] = useState<TypingEvent | null>(null);
   const [connected, setConnected] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -46,6 +70,7 @@ export function useWebSocket(
   const wsRef = useRef<WebSocket | null>(null);
   const attemptsRef = useRef(0);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const typingClearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const nodeIdRef = useRef(nodeId);
   const tokenRef = useRef(token);
   nodeIdRef.current = nodeId;
@@ -54,6 +79,7 @@ export function useWebSocket(
   const clearMessages = useCallback(() => {
     setMessages([]);
     setSocialMessages([]);
+    setTypingEvent(null);
   }, []);
 
   const connect = useCallback(() => {
@@ -71,7 +97,6 @@ export function useWebSocket(
     setConnecting(true);
     setError(null);
 
-    // Prefer JWT token auth; fall back to nodeId
     const param = tok
       ? `token=${encodeURIComponent(tok)}`
       : `nodeId=${encodeURIComponent(id ?? '')}`;
@@ -89,43 +114,65 @@ export function useWebSocket(
       try {
         const envelope = JSON.parse(event.data) as { event?: string; data?: unknown } & Partial<WsMessage>;
 
-        // Social message envelope
         if (envelope.event === 'social' && envelope.data) {
           setSocialMessages(prev => [...prev, envelope.data as SocialMessage]);
           return;
         }
 
-        // Chat message envelope
         if (envelope.event === 'message' && envelope.data) {
-          const d = envelope.data as Partial<WsMessage>;
+          const d = envelope.data as Partial<WsMessage> & { ts?: number; content?: string; role?: 'user' | 'assistant' | 'system' };
           setMessages(prev => [...prev, {
             id: d.id ?? crypto.randomUUID(),
             role: d.role ?? 'assistant',
-            content: (d as { content?: string }).content ?? '',
-            timestamp: (d as { ts?: number }).ts ?? Date.now(),
+            content: d.content ?? '',
+            timestamp: d.ts ?? Date.now(),
+            threadId: d.threadId,
+            read: d.read,
+            readBy: d.readBy,
+            event: 'message',
           }]);
           return;
         }
 
-        // ack / receipt — ignore silently
+        if (envelope.event === 'typing' && envelope.data) {
+          const typing = envelope.data as TypingEvent;
+          setTypingEvent(typing);
+          if (typingClearTimer.current) clearTimeout(typingClearTimer.current);
+          typingClearTimer.current = setTimeout(() => setTypingEvent(null), 3000);
+          return;
+        }
+
+        if (envelope.event === 'message_read' && envelope.data) {
+          const readEvent = envelope.data as MessageReadEvent;
+          setMessages(prev => prev.map(msg => (
+            msg.id === readEvent.messageId
+              ? { ...msg, read: true, readBy: Array.from(new Set([...(msg.readBy ?? []), readEvent.readBy])) }
+              : msg
+          )));
+          return;
+        }
+
         if (envelope.event === 'ack' || envelope.event === 'receipt') return;
 
-        // Legacy flat message format (old node protocol)
         if (envelope.content != null) {
           setMessages(prev => [...prev, {
             id: envelope.id ?? crypto.randomUUID(),
             role: envelope.role ?? 'assistant',
             content: envelope.content ?? '',
             timestamp: envelope.timestamp ?? Date.now(),
+            threadId: envelope.threadId,
+            read: envelope.read,
+            readBy: envelope.readBy,
+            event: 'message',
           }]);
         }
       } catch {
-        // Raw text fallback
         setMessages(prev => [...prev, {
           id: crypto.randomUUID(),
           role: 'assistant',
           content: String(event.data),
           timestamp: Date.now(),
+          event: 'message',
         }]);
       }
     };
@@ -151,7 +198,6 @@ export function useWebSocket(
     };
   }, []);
 
-  // Reconnect when nodeId or token changes
   useEffect(() => {
     if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
     attemptsRef.current = 0;
@@ -166,6 +212,7 @@ export function useWebSocket(
 
     return () => {
       if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
+      if (typingClearTimer.current) clearTimeout(typingClearTimer.current);
       if (wsRef.current) {
         wsRef.current.onclose = null;
         wsRef.current.close();
@@ -174,21 +221,63 @@ export function useWebSocket(
     };
   }, [nodeId, token, connect]);
 
-  const send = useCallback((content: string) => {
+  const send = useCallback((content: string, options?: SendMessageOptions) => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
       setError('未连接，无法发送');
       return;
     }
-    const id = nodeIdRef.current;
     const msg: WsMessage = {
       id: crypto.randomUUID(),
       role: 'user',
       content,
       timestamp: Date.now(),
+      threadId: options?.threadId,
+      read: false,
+      readBy: [],
+      event: 'message',
     };
     setMessages(prev => [...prev, msg]);
-    wsRef.current.send(JSON.stringify({ type: 'message', content, nodeId: id }));
+    wsRef.current.send(JSON.stringify({
+      id: msg.id,
+      type: 'human',
+      from: nodeIdRef.current,
+      to: options?.to,
+      content,
+      threadId: options?.threadId,
+      ts: msg.timestamp,
+      signature: '',
+      encrypted: false,
+    }));
   }, []);
 
-  return { messages, socialMessages, send, connected, connecting, error, clearMessages };
+  const sendTyping = useCallback((payload: { threadId: string; to: string; isTyping: boolean }) => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+    wsRef.current.send(JSON.stringify({
+      event: 'typing',
+      threadId: payload.threadId,
+      to: payload.to,
+      isTyping: payload.isTyping,
+    }));
+  }, []);
+
+  const sendReadReceipt = useCallback((payload: { messageId: string }) => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+    wsRef.current.send(JSON.stringify({
+      event: 'read_receipt',
+      messageId: payload.messageId,
+    }));
+  }, []);
+
+  return {
+    messages,
+    socialMessages,
+    typingEvent,
+    send,
+    sendTyping,
+    sendReadReceipt,
+    connected,
+    connecting,
+    error,
+    clearMessages,
+  };
 }

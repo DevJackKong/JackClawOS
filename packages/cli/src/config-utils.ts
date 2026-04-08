@@ -26,6 +26,7 @@ export interface JackClawKeys {
 
 export interface JackClawState {
   token?: string;
+  apiKey?: string;
   hubPublicKey?: string;
   lastReportTime?: string;
   nextReportTime?: string;

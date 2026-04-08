@@ -1,6 +1,6 @@
 {
   "name": "@jackclaw/sdk",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "JackClaw Plugin Development SDK",
   "type": "module",
   "main": "./dist/index.js",
@@ -18,7 +18,7 @@
     "prepublishOnly": "npm run build"
   },
   "devDependencies": {
-    "@jackclaw/harness": "^0.2.0",
+    "@jackclaw/harness": "^0.3.0",
     "@types/node": "^20.0.0",
     "typescript": "^5.4.0"
   },

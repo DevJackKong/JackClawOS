@@ -35,6 +35,8 @@ export interface StoredMessage {
   status: string
   ts: number
   encrypted: boolean
+  recalled?: boolean
+  recalledAt?: number
 }
 
 export interface SearchOptions {
@@ -64,6 +66,8 @@ function row2msg(row: Record<string, unknown>): StoredMessage {
     status:    row.status as string,
     ts:        row.ts as number,
     encrypted: (row.encrypted as number) === 1,
+    recalled:  (row.recalled as number | null) === 1,
+    recalledAt: typeof row.recalled_at === 'number' ? row.recalled_at as number : undefined,
   }
 }
 
@@ -86,7 +90,9 @@ const CREATE_STMTS = [
     attachments TEXT,
     status      TEXT DEFAULT 'sent',
     ts          INTEGER,
-    encrypted   INTEGER DEFAULT 0
+    encrypted   INTEGER DEFAULT 0,
+    recalled    INTEGER DEFAULT 0,
+    recalled_at INTEGER
   )`,
   `CREATE INDEX IF NOT EXISTS idx_thread ON messages(thread_id)`,
   `CREATE INDEX IF NOT EXISTS idx_to     ON messages(to_agent)`,
@@ -143,6 +149,8 @@ class SqliteMessageStore {
     for (const sql of CREATE_STMTS) {
       this.db.run(sql)
     }
+    try { this.db.run('ALTER TABLE messages ADD COLUMN recalled INTEGER DEFAULT 0') } catch {}
+    try { this.db.run('ALTER TABLE messages ADD COLUMN recalled_at INTEGER') } catch {}
     // Auto-save to disk every 5s if dirty
     this._saveTimer = setInterval(() => this._flush(), 5000)
     this._saveTimer.unref()
@@ -170,8 +178,8 @@ class SqliteMessageStore {
     sqlRun(this.db, `
       INSERT OR REPLACE INTO messages
         (id, thread_id, from_agent, to_agent, from_human, content, type,
-         reply_to, attachments, status, ts, encrypted)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         reply_to, attachments, status, ts, encrypted, recalled, recalled_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       msg.id,
       msg.threadId ?? null,
@@ -185,6 +193,8 @@ class SqliteMessageStore {
       msg.status ?? 'sent',
       msg.ts,
       msg.encrypted ? 1 : 0,
+      msg.recalled ? 1 : 0,
+      msg.recalledAt ?? null,
     ])
     // Keep FTS in sync
     sqlRun(this.db, `DELETE FROM messages_fts WHERE message_id = ?`, [msg.id])
@@ -272,6 +282,14 @@ class SqliteMessageStore {
       `SELECT * FROM messages WHERE to_agent = ? ORDER BY ts DESC LIMIT ? OFFSET ?`,
       [agentHandle, limit, offset],
     ).map(row2msg)
+  }
+
+  markMessageRecalled(id: string, recalledAt: number): StoredMessage | null {
+    const current = this.getMessage(id)
+    if (!current) return null
+    const updated: StoredMessage = { ...current, recalled: true, recalledAt, status: 'recalled' }
+    this.saveMessage(updated)
+    return updated
   }
 
   deleteMessage(id: string): void {
@@ -365,6 +383,14 @@ class JsonlMessageStore {
       .slice(offset, offset + limit)
   }
 
+  markMessageRecalled(id: string, recalledAt: number): StoredMessage | null {
+    const idx = this.messages.findIndex(m => m.id === id)
+    if (idx < 0) return null
+    this.messages[idx] = { ...this.messages[idx], recalled: true, recalledAt, status: 'recalled' }
+    this._rewrite()
+    return this.messages[idx]
+  }
+
   deleteMessage(id: string): void {
     this.messages = this.messages.filter(m => m.id !== id)
     this._rewrite()
@@ -431,6 +457,7 @@ export class MessageStore {
   getMessage(id: string): StoredMessage | null                     { return this.backend.getMessage(id) }
   getThread(t: string, l?: number, o?: number): StoredMessage[]    { return this.backend.getThread(t, l, o) }
   getInbox(h: string, l?: number, o?: number): StoredMessage[]     { return this.backend.getInbox(h, l, o) }
+  markMessageRecalled(id: string, recalledAt: number): StoredMessage | null { return this.backend.markMessageRecalled(id, recalledAt) }
   deleteMessage(id: string): void                                  { this.backend.deleteMessage(id) }
   getStats()                                                       { return this.backend.getStats() }
   getMessagesByParticipant(h: string, l?: number, o?: number): StoredMessage[] {

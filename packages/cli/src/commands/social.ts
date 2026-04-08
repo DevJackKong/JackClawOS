@@ -12,7 +12,14 @@ import { Command } from 'commander'
 import axios from 'axios'
 import chalk from 'chalk'
 import * as readline from 'readline'
-import { loadConfig } from '../config-utils'
+import { loadConfig, loadState } from '../config-utils'
+
+function authHeaders(): Record<string, string> {
+  const state = loadState()
+  if (state.token) return { Authorization: `Bearer ${state.token}` }
+  if (state.apiKey) return { Authorization: `Bearer ${state.apiKey}` }
+  return {}
+}
 
 function getHub(opts: { hub?: string; [k: string]: unknown }): string {
   const cfg = loadConfig()
@@ -60,7 +67,7 @@ export function registerSocial(program: Command): void {
           toAgent: toAgent.startsWith('@') ? toAgent : `@${toAgent}`,
           content: message,
           type: opts.type,
-        })
+        }, { headers: authHeaders() })
         console.log(chalk.green(`[social] Sent ✓ messageId=${res.data.messageId}`))
       } catch (err: any) {
         const msg = err.response?.data?.message ?? err.response?.data?.error ?? err.message
@@ -85,7 +92,7 @@ export function registerSocial(program: Command): void {
       }
 
       try {
-        const res = await axios.get(`${hub}/api/social/contacts`, { params: { agentHandle: handle } })
+        const res = await axios.get(`${hub}/api/social/contacts`, { params: { agentHandle: handle }, headers: authHeaders() })
         const contacts: Array<{ handle: string; profile: { ownerName?: string; bio?: string } | null }> = res.data.contacts
         if (contacts.length === 0) {
           console.log(chalk.gray('[social] No contacts yet.'))
@@ -123,6 +130,7 @@ export function registerSocial(program: Command): void {
       try {
         const res = await axios.get(`${hub}/api/social/messages`, {
           params: { agentHandle: handle, limit: opts.limit, offset: opts.offset },
+          headers: authHeaders(),
         })
         const msgs: Array<{ id: string; fromAgent: string; content: string; type: string; ts: number }> = res.data.messages
         if (msgs.length === 0) {
@@ -165,7 +173,7 @@ export function registerSocial(program: Command): void {
           fromHuman: opts.human,
           fromAgent,
           content: message,
-        })
+        }, { headers: authHeaders() })
         console.log(chalk.green(`[social] Reply sent ✓ messageId=${res.data.messageId}`))
       } catch (err: any) {
         const msg = err.response?.data?.error ?? err.message
@@ -220,7 +228,7 @@ export function registerSocial(program: Command): void {
             bio:         bio   ?? '',
             skills:      (skills ?? '').split(',').map(s => s.trim()).filter(Boolean),
             contactPolicy: opts.policy,
-          })
+          }, { headers: authHeaders() })
           console.log(chalk.green('[social] Profile updated ✓'))
           console.log(JSON.stringify(res.data.profile, null, 2))
         } catch (err: any) {
@@ -230,7 +238,7 @@ export function registerSocial(program: Command): void {
       } else {
         // View mode
         try {
-          const res = await axios.get(`${hub}/api/social/profile/${encodeURIComponent(handle)}`)
+          const res = await axios.get(`${hub}/api/social/profile/${encodeURIComponent(handle)}`, { headers: authHeaders() })
           const p = res.data.profile
           console.log(chalk.bold(`\n[social] Profile: ${p.agentHandle}`))
           console.log(`  Name:   ${p.ownerName}`)
@@ -274,7 +282,7 @@ export function registerSocial(program: Command): void {
           toAgent: toHandle.startsWith('@') ? toHandle : `@${toHandle}`,
           message: opts.message,
           purpose: opts.purpose,
-        })
+        }, { headers: authHeaders() })
         console.log(chalk.green(`[social] Contact request sent ✓ requestId=${res.data.requestId}`))
       } catch (err: any) {
         const msg = err.response?.data?.message ?? err.response?.data?.error ?? err.message
@@ -299,7 +307,7 @@ export function registerSocial(program: Command): void {
       }
 
       try {
-        const res = await axios.get(`${hub}/api/social/threads`, { params: { agentHandle: handle } })
+        const res = await axios.get(`${hub}/api/social/threads`, { params: { agentHandle: handle }, headers: authHeaders() })
         const threads: Array<{ id: string; participants: string[]; lastMessage?: string; lastMessageAt: number; messageCount: number }> = res.data.threads
         if (threads.length === 0) {
           console.log(chalk.gray('[social] No threads yet.'))

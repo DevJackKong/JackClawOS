@@ -1,6 +1,6 @@
 {
   "name": "@jackclaw/llm-gateway",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Multi-model LLM gateway — OpenAI, Anthropic, Google, DeepSeek, Ollama, and more",
   "type": "module",
   "main": "dist/index.js",

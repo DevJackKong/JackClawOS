@@ -55,7 +55,7 @@ interface Props {
   replyTo?: ChatMessage;
 }
 
-type SendStatus = 'sent' | 'delivered' | 'read';
+type SendStatus = 'sent' | 'read';
 
 function fmtTime(ts: number): string {
   return new Date(ts).toLocaleTimeString('zh-CN', {
@@ -66,12 +66,10 @@ function fmtTime(ts: number): string {
 }
 
 const STATUS_ICONS: Record<SendStatus, string> = {
-  sent:      '✓',
-  delivered: '✓✓',
-  read:      '✓✓',
+  sent: '✓',
+  read: '✓✓',
 };
 
-// Long-press detection threshold
 const LONG_PRESS_MS = 500;
 
 export const MessageBubble: React.FC<Props> = ({ msg, onReply, replyTo }) => {
@@ -80,9 +78,7 @@ export const MessageBubble: React.FC<Props> = ({ msg, onReply, replyTo }) => {
 
   const isSelf = msg.role === 'user';
   const isSystem = msg.role === 'system';
-
-  // Simulated status for user messages
-  const status: SendStatus = 'read';
+  const status: SendStatus = msg.read ? 'read' : 'sent';
 
   function handleLongPressStart() {
     pressTimer.current = setTimeout(() => setMenuOpen(true), LONG_PRESS_MS);
@@ -100,7 +96,6 @@ export const MessageBubble: React.FC<Props> = ({ msg, onReply, replyTo }) => {
     setMenuOpen(false);
   }
   function deleteMsg() {
-    // Placeholder — would call API
     setMenuOpen(false);
   }
 
@@ -115,7 +110,6 @@ export const MessageBubble: React.FC<Props> = ({ msg, onReply, replyTo }) => {
 
   return (
     <div className={`msg-row ${isSelf ? 'msg-self' : 'msg-other'}`} onClick={() => setMenuOpen(false)}>
-      {/* Avatar (other side only) */}
       {!isSelf && (
         <div className="msg-avatar">
           <span>{msg.role === 'assistant' ? '🤖' : '?'}</span>
@@ -123,14 +117,12 @@ export const MessageBubble: React.FC<Props> = ({ msg, onReply, replyTo }) => {
       )}
 
       <div className="msg-body">
-        {/* Reply-to preview */}
         {replyTo && (
           <div className="msg-reply-preview">
             <span className="msg-reply-preview-text">{replyTo.content.slice(0, 40)}</span>
           </div>
         )}
 
-        {/* Bubble */}
         <div
           className={`msg-bubble ${isSelf ? 'msg-bubble-self' : 'msg-bubble-other'}`}
           onMouseDown={handleLongPressStart}
@@ -139,15 +131,9 @@ export const MessageBubble: React.FC<Props> = ({ msg, onReply, replyTo }) => {
           onTouchEnd={handleLongPressEnd}
           onContextMenu={e => { e.preventDefault(); setMenuOpen(true); }}
         >
-          {/* Image message (legacy [image] prefix) */}
           {msg.content.startsWith('[image]') ? (
-            <img
-              className="msg-image"
-              src={msg.content.replace('[image]', '').trim()}
-              alt="图片消息"
-            />
-          ) : /* File message */
-          msg.content.startsWith('[file]') ? (
+            <img className="msg-image" src={msg.content.replace('[image]', '').trim()} alt="图片消息" />
+          ) : msg.content.startsWith('[file]') ? (
             <div className="msg-file">
               <span className="msg-file-icon">📎</span>
               <span className="msg-file-name">{msg.content.replace('[file]', '').trim()}</span>
@@ -156,37 +142,23 @@ export const MessageBubble: React.FC<Props> = ({ msg, onReply, replyTo }) => {
             <div className="msg-text">{renderMarkdown(msg.content)}</div>
           )}
 
-          {/* Attachment images */}
-          {msg.attachments && msg.attachments.filter(a => a.type === 'image').map((att, i) => (
-            <img
-              key={i}
-              className="msg-image"
-              src={att.data ?? att.url}
-              alt={att.name}
-            />
+          {msg.attachments?.filter(a => a.type === 'image').map((att, i) => (
+            <img key={i} className="msg-image" src={att.data ?? att.url} alt={att.name} />
           ))}
 
-          {/* Footer: time + status */}
           <div className="msg-meta">
             <span className="msg-time">{fmtTime(msg.createdAt)}</span>
-            {isSelf && (
-              <span className={`msg-status msg-status-${status}`}>
-                {STATUS_ICONS[status]}
-              </span>
-            )}
-            {msg.tokens != null && (
-              <span className="msg-tokens">{msg.tokens}t</span>
-            )}
+            {isSelf && <span className={`msg-status msg-status-${status}`}>{STATUS_ICONS[status]}</span>}
+            {msg.tokens != null && <span className="msg-tokens">{msg.tokens}t</span>}
           </div>
         </div>
       </div>
 
-      {/* Context menu */}
       {menuOpen && (
         <div className={`msg-context-menu ${isSelf ? 'msg-context-menu-self' : 'msg-context-menu-other'}`}>
           <button className="msg-ctx-btn" onClick={copyText}>复制</button>
           <button className="msg-ctx-btn" onClick={replyMsg}>回复</button>
-          <button className="msg-ctx-btn" onClick={() => { /* forward placeholder */ setMenuOpen(false); }}>转发</button>
+          <button className="msg-ctx-btn" onClick={() => { setMenuOpen(false); }}>转发</button>
           <button className="msg-ctx-btn msg-ctx-danger" onClick={deleteMsg}>删除</button>
         </div>
       )}

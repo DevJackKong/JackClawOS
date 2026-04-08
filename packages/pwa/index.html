@@ -237,6 +237,50 @@
     z-index: 150;
   }
 
+  /* 更新横幅 */
+  #update-banner {
+    display: none;
+    position: fixed;
+    top: 68px;
+    left: 12px;
+    right: 12px;
+    background: #1f2937;
+    border: 1px solid var(--accent);
+    border-radius: 12px;
+    z-index: 310;
+    box-shadow: 0 6px 24px rgba(0,0,0,.35);
+  }
+  .update-banner-inner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 14px;
+  }
+  .update-banner-text { flex: 1; font-size: 13px; color: var(--text); }
+  .update-banner-actions { display: flex; gap: 8px; }
+
+  /* iOS 安装引导 */
+  #ios-install-banner {
+    display: none;
+    position: fixed;
+    bottom: 70px;
+    left: 12px;
+    right: 12px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    z-index: 301;
+    box-shadow: 0 4px 20px rgba(0,0,0,.35);
+  }
+  .ios-install-inner {
+    padding: 12px 14px;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .ios-install-text { flex: 1; font-size: 12px; color: var(--text-muted); line-height: 1.6; }
+  .ios-install-text strong { display: block; color: var(--text); font-size: 14px; margin-bottom: 2px; }
+
   /* 语音委派浮动按钮 */
   #fab-voice {
     display: none;
@@ -542,6 +586,29 @@ startCountdown();
   📴 当前离线，显示缓存数据
 </div>
 
+<!-- ── 更新提示 ── -->
+<div id="update-banner">
+  <div class="update-banner-inner">
+    <div class="update-banner-text">发现新版本，刷新后即可使用最新功能</div>
+    <div class="update-banner-actions">
+      <button class="btn btn-primary" onclick="applyUpdate()">立即更新</button>
+      <button class="btn btn-ghost" onclick="dismissUpdateBanner()">稍后</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── iOS 安装引导 ── -->
+<div id="ios-install-banner">
+  <div class="ios-install-inner">
+    <span class="install-icon">📱</span>
+    <div class="ios-install-text">
+      <strong>安装到 iPhone 主屏幕</strong>
+      Safari 中点 <b>分享</b> → <b>添加到主屏幕</b>，即可像原生 App 一样使用。
+    </div>
+    <button class="install-dismiss" onclick="dismissIosInstallBanner()">✕</button>
+  </div>
+</div>
+
 <!-- 语音委派浮动按钮 -->
 <button id="fab-voice" onclick="toggleVoiceInput()" title="语音委派任务">🎙️</button>
 
@@ -553,11 +620,17 @@ if ('serviceWorker' in navigator) {
       const reg = await navigator.serviceWorker.register('/service-worker.js', { scope: '/' })
       console.log('[PWA] SW registered:', reg.scope)
 
-      // SW 更新检测
+      if (reg.waiting) {
+        _waitingWorker = reg.waiting
+        showUpdateBanner()
+      }
+
       reg.addEventListener('updatefound', () => {
         const newWorker = reg.installing
+        if (!newWorker) return
         newWorker.addEventListener('statechange', () => {
           if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+            _waitingWorker = reg.waiting || newWorker
             showUpdateBanner()
           }
         })
@@ -589,44 +662,69 @@ if ('serviceWorker' in navigator) {
     if (type === 'OUTBOX_COUNT') {
       updateOutboxBadge(e.data.count)
     }
-    if (type === 'MSG_SENT') {
-      console.log('[PWA] Queued message delivered, id:', e.data.msgId)
-      // 刷新 outbox 角标
+    if (type === 'MSG_SENT' || type === 'OUTBOX_UPDATED') {
       navigator.serviceWorker.controller?.postMessage({ type: 'GET_OUTBOX_COUNT' })
     }
+    if (type === 'SW_ACTIVATED' && navigator.serviceWorker.controller) {
+      window.location.reload()
+    }
+  })
+
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    window.location.reload()
   })
 }
 
 // ── 离线消息 outbox 角标 ─────────────────────────────────────────────────────
 function updateOutboxBadge(count) {
-  // 在状态栏显示待发消息数
   const el = document.getElementById('status-text')
   if (count > 0) {
     el.textContent = `离线队列 ${count} 条待发`
+  } else if (navigator.onLine) {
+    el.textContent = `已连接 · ${new Date().toLocaleTimeString('zh-CN', { hour12:false })}`
   }
 }
 
 // ── PWA: Install Prompt ───────────────────────────────────────────────────────
 let _installPrompt = null
+let _waitingWorker = null
+
 window.addEventListener('beforeinstallprompt', (e) => {
   e.preventDefault()
   _installPrompt = e
-  // 延迟 3 秒显示安装横幅（不打断用户首屏体验）
   if (!localStorage.getItem('pwa_install_dismissed')) {
-    setTimeout(() => {
-      document.getElementById('install-banner').style.display = 'block'
-    }, 3000)
+    setTimeout(() => showInstallBanner(), 3000)
   }
 })
 
-function promptInstall() {
+function isStandaloneMode() {
+  return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true
+}
+
+function isIosSafari() {
+  const ua = window.navigator.userAgent
+  return /iPhone|iPad|iPod/i.test(ua) && /Safari/i.test(ua) && !/CriOS|FxiOS|EdgiOS/i.test(ua)
+}
+
+function showInstallBanner() {
+  if (_installPrompt && !isStandaloneMode()) {
+    document.getElementById('install-banner').style.display = 'block'
+  }
+}
+
+function maybeShowIosInstallGuide() {
+  if (isIosSafari() && !isStandaloneMode() && !localStorage.getItem('ios_install_dismissed')) {
+    document.getElementById('ios-install-banner').style.display = 'block'
+  }
+}
+
+async function promptInstall() {
   if (!_installPrompt) return
-  _installPrompt.prompt()
-  _installPrompt.userChoice.then(choice => {
-    console.log('[PWA] Install choice:', choice.outcome)
-    document.getElementById('install-banner').style.display = 'none'
-    _installPrompt = null
-  })
+  await _installPrompt.prompt()
+  const choice = await _installPrompt.userChoice
+  console.log('[PWA] Install choice:', choice.outcome)
+  document.getElementById('install-banner').style.display = 'none'
+  _installPrompt = null
 }
 
 function dismissInstallBanner() {
@@ -634,9 +732,14 @@ function dismissInstallBanner() {
   localStorage.setItem('pwa_install_dismissed', '1')
 }
 
-// 安装成功后隐藏横幅
+function dismissIosInstallBanner() {
+  document.getElementById('ios-install-banner').style.display = 'none'
+  localStorage.setItem('ios_install_dismissed', '1')
+}
+
 window.addEventListener('appinstalled', () => {
   document.getElementById('install-banner').style.display = 'none'
+  document.getElementById('ios-install-banner').style.display = 'none'
   console.log('[PWA] App installed!')
 })
 
@@ -648,10 +751,9 @@ function updateOnlineStatus() {
 window.addEventListener('online',  updateOnlineStatus)
 window.addEventListener('offline', updateOnlineStatus)
 updateOnlineStatus()
+maybeShowIosInstallGuide()
 
 // ── PWA: 推送通知订阅 ─────────────────────────────────────────────────────────
-const VAPID_PUBLIC_KEY = localStorage.getItem('jackclaw_vapid_key') || ''
-
 async function subscribePush() {
   const { url, token } = getConfig()
   if (!url) return
@@ -659,13 +761,6 @@ async function subscribePush() {
   await JackClawPush.initFromHub(url, token)
   const sub = await JackClawPush.subscribe(url, token)
   if (sub) console.log('[PWA] Push subscribed!')
-}
-
-function urlBase64ToUint8Array(base64String) {
-  const padding = '='.repeat((4 - base64String.length % 4) % 4)
-  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/')
-  const rawData = atob(base64)
-  return Uint8Array.from([...rawData].map(c => c.charCodeAt(0)))
 }
 
 // ── Tab 切换 ──────────────────────────────────────────────────────────────────
@@ -751,10 +846,19 @@ window.saveConfig = function() {
 }
 
 function showUpdateBanner() {
-  if (confirm('JackClaw 有新版本，立即更新？')) {
-    navigator.serviceWorker.controller?.postMessage({ type: 'SKIP_WAITING' })
-    window.location.reload()
+  document.getElementById('update-banner').style.display = 'block'
+}
+
+function dismissUpdateBanner() {
+  document.getElementById('update-banner').style.display = 'none'
+}
+
+function applyUpdate() {
+  if (_waitingWorker) {
+    _waitingWorker.postMessage({ type: 'SKIP_WAITING' })
+    return
   }
+  navigator.serviceWorker.controller?.postMessage({ type: 'SKIP_WAITING' })
 }
 </script>
 </body>

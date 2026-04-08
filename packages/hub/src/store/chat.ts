@@ -55,6 +55,9 @@ export interface ChatMessage {
   signature: string
   encrypted: boolean
   read?: boolean
+  readBy?: string[]
+  recalled?: boolean
+  recalledAt?: number
   metadata?: Record<string, unknown>
   executionResult?: {
     status: 'success' | 'failed' | 'pending-review'
@@ -73,6 +76,8 @@ export interface ChatThread {
 }
 
 function storedToChat(s: StoredMessage): ChatMessage {
+  const read = s.status === 'read'
+  const readBy = read ? [String(s.toAgent)] : []
   return {
     id:        s.id,
     threadId:  s.threadId,
@@ -85,6 +90,10 @@ function storedToChat(s: StoredMessage): ChatMessage {
     ts:        s.ts,
     signature: '',
     encrypted: s.encrypted,
+    read,
+    readBy,
+    recalled: Boolean(s.recalled),
+    recalledAt: s.recalledAt,
   }
 }
 
@@ -93,15 +102,17 @@ export class ChatStore {
   private threads: Map<string, ChatThread> = new Map()
   private inbox: Map<string, ChatMessage[]> = new Map()
   private groups: Map<string, ChatGroup> = new Map()
+  private messageRead: Map<string, Set<string>> = new Map()
   // nodeId → 活跃时间统计（轻量观察，不做深度分析）
   private activityLog: Map<string, number[]> = new Map()
 
   getMessage(id: string): ChatMessage | undefined {
-    return this.messages.get(id)
+    const msg = this.messages.get(id)
+    return msg ? this.withReadState(msg) : undefined
   }
 
   saveMessage(msg: ChatMessage): void {
-    this.messages.set(msg.id, msg)
+    this.messages.set(msg.id, this.withReadState(msg))
     if (msg.threadId) {
       const thread = this.threads.get(msg.threadId)
       if (thread) {
@@ -122,8 +133,19 @@ export class ChatStore {
       status:      msg.executionResult?.status ?? 'sent',
       ts:          msg.ts,
       encrypted:   msg.encrypted,
+      recalled:    msg.recalled,
+      recalledAt:  msg.recalledAt,
     }
     try { messageStore.saveMessage(stored) } catch { /* persistence is best-effort */ }
+  }
+
+  recallMessage(id: string, recalledAt = Date.now()): ChatMessage | null {
+    const current = this.messages.get(id)
+    const updated = messageStore.markMessageRecalled(id, recalledAt)
+    if (!updated) return null
+    const recalledMsg = storedToChat(updated)
+    this.messages.set(id, current ? { ...current, recalled: true, recalledAt } : recalledMsg)
+    return this.messages.get(id) ?? recalledMsg
   }
 
   getThread(threadId: string): ChatMessage[] {
@@ -131,28 +153,29 @@ export class ChatStore {
     try {
       const stored = messageStore.getThread(threadId, 200, 0)
       if (stored.length > 0) {
-        return stored.map(s => storedToChat(s))
+        return stored.map(s => this.withReadState(storedToChat(s)))
       }
     } catch { /* fall through */ }
     return [...this.messages.values()]
       .filter(m => m.threadId === threadId)
       .sort((a, b) => a.ts - b.ts)
+      .map(m => this.withReadState(m))
   }
 
   getInbox(nodeId: string): ChatMessage[] {
-    return this.inbox.get(nodeId) ?? []
+    return (this.inbox.get(nodeId) ?? []).map(msg => this.withReadState(msg))
   }
 
   queueForOffline(nodeId: string, msg: ChatMessage): void {
     const q = this.inbox.get(nodeId) ?? []
-    q.push(msg)
+    q.push(this.withReadState(msg))
     this.inbox.set(nodeId, q)
   }
 
   drainInbox(nodeId: string): ChatMessage[] {
     const msgs = this.inbox.get(nodeId) ?? []
     this.inbox.delete(nodeId)
-    return msgs
+    return msgs.map(msg => this.withReadState(msg))
   }
 
   createThread(participants: string[], title?: string): ChatThread {
@@ -172,6 +195,21 @@ export class ChatStore {
     return [...this.threads.values()]
       .filter(t => t.participants.includes(nodeId))
       .sort((a, b) => b.lastMessageAt - a.lastMessageAt)
+  }
+
+  markMessageRead(messageId: string, readBy: string): ChatMessage | undefined {
+    const msg = this.messages.get(messageId)
+    if (!msg) return undefined
+    const readers = this.messageRead.get(messageId) ?? new Set<string>()
+    readers.add(readBy)
+    this.messageRead.set(messageId, readers)
+    const next = { ...msg, read: readers.size > 0, readBy: [...readers] }
+    this.messages.set(messageId, next)
+    return next
+  }
+
+  getMessageReaders(messageId: string): string[] {
+    return [...(this.messageRead.get(messageId) ?? new Set<string>())]
   }
 
   /** Hub 侧轻量观察：记录活跃时间戳，供 Node 侧 OwnerMemory 消费 */
@@ -210,5 +248,10 @@ export class ChatStore {
     return [...this.groups.values()]
       .filter(g => g.members.includes(nodeId))
       .sort((a, b) => b.createdAt - a.createdAt)
+  }
+
+  private withReadState(msg: ChatMessage): ChatMessage {
+    const readBy = [...(this.messageRead.get(msg.id) ?? new Set(msg.readBy ?? []))]
+    return { ...msg, read: readBy.length > 0, readBy }
   }
 }

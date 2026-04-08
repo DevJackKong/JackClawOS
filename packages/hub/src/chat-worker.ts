@@ -442,6 +442,33 @@ export class ChatWorker {
             return
           }
 
+          if (parsed.event === 'typing') {
+            const to = typeof parsed.to === 'string' ? parsed.to : null
+            const threadId = typeof parsed.threadId === 'string' ? parsed.threadId : ''
+            if (!to || !threadId) return
+            this.pushEvent(to, 'typing', {
+              from: nodeId,
+              to,
+              threadId,
+              isTyping: Boolean(parsed.isTyping),
+              ts: Date.now(),
+            })
+            return
+          }
+
+          if (parsed.event === 'read_receipt' && typeof parsed.messageId === 'string') {
+            const readMessage = this.store.markMessageRead(parsed.messageId, nodeId!)
+            if (!readMessage) return
+            recordTransition(parsed.messageId, 'stored' as MessageStatus, 'consumed' as MessageStatus, nodeId!)
+            this.pushEvent(readMessage.from, 'message_read', {
+              messageId: parsed.messageId,
+              threadId: readMessage.threadId,
+              readBy: nodeId,
+              ts: Date.now(),
+            })
+            return
+          }
+
           // ─── Regular chat message ──────────────────────────────────────────
           const msg = parsed as ChatMessage
 

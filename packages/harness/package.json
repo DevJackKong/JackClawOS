@@ -1,6 +1,6 @@
 {
   "name": "@jackclaw/harness",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "description": "JackClaw Harness Best Practice Framework — ACP harness adapter layer",
   "main": "dist/src/index.js",
@@ -18,11 +18,11 @@
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
-    "@jackclaw/protocol": "^0.2.0",
-    "@jackclaw/memory": "^0.2.0"
+    "@jackclaw/protocol": "^0.3.0",
+    "@jackclaw/memory": "^0.3.0"
   },
   "peerDependencies": {
-    "@jackclaw/node": "^0.2.0"
+    "@jackclaw/node": "^0.3.0"
   },
   "devDependencies": {
     "typescript": "^5.4.0",

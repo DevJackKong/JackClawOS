@@ -1,6 +1,6 @@
 {
   "name": "@jackclaw/cli",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "JackClaw CLI management tool",
   "main": "dist/index.js",
   "bin": {
@@ -12,10 +12,10 @@
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
-    "@jackclaw/hub": "^0.2.0",
-    "@jackclaw/node": "^0.2.0",
-    "@jackclaw/protocol": "^0.2.0",
-    "@jackclaw/tunnel": "^0.2.0",
+    "@jackclaw/hub": "^0.3.0",
+    "@jackclaw/node": "^0.3.0",
+    "@jackclaw/protocol": "^0.3.0",
+    "@jackclaw/tunnel": "^0.3.0",
     "@types/js-yaml": "^4.0.9",
     "axios": "^1.6.0",
     "chalk": "^4.1.2",

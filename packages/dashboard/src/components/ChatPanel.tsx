@@ -1,8 +1,10 @@
 // ChatPanel — ClawChat: thread list (left) + message stream (right) + input
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, type ChatThread, type ChatMessage } from '../api.js';
 import { useWebSocket } from '../useWebSocket.js';
+import { ChatInput } from './ChatInput.js';
+import { MessageBubble } from './MessageBubble.js';
 
 interface Props {
   token: string;
@@ -29,19 +31,6 @@ const ThreadItem: React.FC<{
   </button>
 );
 
-const MessageBubble: React.FC<{ msg: ChatMessage }> = ({ msg }) => (
-  <div className={`msg-row msg-${msg.role}`}>
-    <div className="msg-bubble">
-      <div className="msg-content">{msg.content}</div>
-      <div className="msg-footer">
-        <span className="msg-role">{msg.role}</span>
-        <span className="msg-time">{fmtTime(msg.createdAt)}</span>
-        {msg.tokens != null && <span className="msg-tokens">{msg.tokens}t</span>}
-      </div>
-    </div>
-  </div>
-);
-
 export const ChatPanel: React.FC<Props> = ({ token, nodeId }) => {
   const [threads, setThreads] = useState<ChatThread[]>([]);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
@@ -52,11 +41,17 @@ export const ChatPanel: React.FC<Props> = ({ token, nodeId }) => {
   const [sending, setSending] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  const { messages: wsMessages, send: wsSend, connected, connecting } = useWebSocket(nodeId);
+  const {
+    messages: wsMessages,
+    typingEvent,
+    send: wsSend,
+    sendTyping,
+    sendReadReceipt,
+    connected,
+    connecting,
+  } = useWebSocket(nodeId, token);
 
-  // Load thread list
   useEffect(() => {
     if (!nodeId) return;
     let cancelled = false;
@@ -68,7 +63,6 @@ export const ChatPanel: React.FC<Props> = ({ token, nodeId }) => {
     return () => { cancelled = true; };
   }, [token, nodeId]);
 
-  // Load thread messages when selection changes
   useEffect(() => {
     if (!activeThreadId) { setHistMessages([]); return; }
     setLoadingThread(true);
@@ -79,10 +73,31 @@ export const ChatPanel: React.FC<Props> = ({ token, nodeId }) => {
       .finally(() => setLoadingThread(false));
   }, [token, activeThreadId]);
 
-  // Auto-scroll
+  const displayMessages = useMemo<ChatMessage[]>(() => (
+    activeThreadId
+      ? histMessages
+      : wsMessages.map(m => ({
+          id: m.id,
+          threadId: m.threadId ?? '',
+          role: m.role,
+          content: m.content,
+          createdAt: m.timestamp,
+          tokens: undefined,
+          read: m.read,
+          readBy: Array.isArray(m.readBy) ? m.readBy : undefined,
+        }))
+  ), [activeThreadId, histMessages, wsMessages]);
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [histMessages, wsMessages]);
+  }, [displayMessages, typingEvent]);
+
+  useEffect(() => {
+    if (!nodeId) return;
+    displayMessages
+      .filter(msg => msg.role !== 'user' && !msg.read)
+      .forEach(msg => sendReadReceipt({ messageId: msg.id }));
+  }, [displayMessages, nodeId, sendReadReceipt]);
 
   const handleSend = useCallback(async () => {
     const text = inputText.trim();
@@ -90,9 +105,10 @@ export const ChatPanel: React.FC<Props> = ({ token, nodeId }) => {
 
     setInputText('');
     setSending(true);
+    sendTyping({ threadId: activeThreadId ?? 'live', to: nodeId, isTyping: false });
 
     if (connected) {
-      wsSend(text);
+      wsSend(text, { threadId: activeThreadId ?? 'live', to: nodeId });
       setSending(false);
     } else {
       try {
@@ -110,29 +126,23 @@ export const ChatPanel: React.FC<Props> = ({ token, nodeId }) => {
         setSending(false);
       }
     }
-  }, [inputText, nodeId, token, connected, wsSend, activeThreadId, msgType]);
+  }, [inputText, nodeId, activeThreadId, connected, wsSend, sendTyping, token, msgType]);
 
-  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      void handleSend();
-    }
-  }, [handleSend]);
+  const handleTyping = useCallback((isTyping: boolean) => {
+    if (!connected || !nodeId) return;
+    sendTyping({ threadId: activeThreadId ?? 'live', to: nodeId, isTyping });
+  }, [activeThreadId, connected, nodeId, sendTyping]);
 
-  const displayMessages = activeThreadId ? histMessages : wsMessages.map(m => ({
-    id: m.id,
-    threadId: '',
-    role: m.role,
-    content: m.content,
-    createdAt: m.timestamp,
-    tokens: undefined,
-  }));
+  const showTyping = Boolean(
+    typingEvent?.isTyping
+    && typingEvent.to === nodeId
+    && typingEvent.threadId === (activeThreadId ?? 'live')
+  );
 
   const wsStatus = connecting ? 'connecting' : connected ? 'connected' : 'disconnected';
 
   return (
     <div className="chat-panel">
-      {/* Thread sidebar */}
       <aside className="thread-sidebar">
         <div className="sidebar-header">
           <span className="sidebar-title">会话列表</span>
@@ -155,17 +165,11 @@ export const ChatPanel: React.FC<Props> = ({ token, nodeId }) => {
           </button>
 
           {threads.map(t => (
-            <ThreadItem
-              key={t.id}
-              thread={t}
-              active={activeThreadId === t.id}
-              onClick={() => setActiveThreadId(t.id)}
-            />
+            <ThreadItem key={t.id} thread={t} active={activeThreadId === t.id} onClick={() => setActiveThreadId(t.id)} />
           ))}
         </div>
       </aside>
 
-      {/* Message area */}
       <div className="chat-main">
         <div className="messages-area">
           {loadingThread ? (
@@ -180,40 +184,26 @@ export const ChatPanel: React.FC<Props> = ({ token, nodeId }) => {
               <MessageBubble key={msg.id} msg={msg} />
             ))
           )}
+          {showTyping && (
+            <div className="chat-typing" style={{ padding: '8px 12px', color: '#8b949e', fontSize: 12 }}>
+              对方正在输入...
+            </div>
+          )}
           <div ref={messagesEndRef} />
         </div>
 
         <div className="chat-input-bar">
-          <div className="msg-type-selector">
-            {(['human', 'task', 'ask'] as MsgType[]).map(t => (
-              <button
-                key={t}
-                className={`msg-type-btn ${msgType === t ? 'msg-type-active' : ''}`}
-                onClick={() => setMsgType(t)}
-              >
-                {t}
-              </button>
-            ))}
-          </div>
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
-          <textarea
-            ref={inputRef}
-            className="chat-input"
+          <ChatInput
             value={inputText}
-            onChange={e => setInputText(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={nodeId ? '输入消息… (Enter 发送, Shift+Enter 换行)' : '请先选择目标节点'}
+            onChange={setInputText}
+            onSend={() => void handleSend()}
             disabled={!nodeId || sending}
-            rows={2}
+            sending={sending}
+            msgType={msgType}
+            onMsgTypeChange={setMsgType}
+            onEmojiClick={() => {}}
+            onTyping={handleTyping}
           />
-          <button
-            className={`send-btn ${sending ? 'send-loading' : ''}`}
-            onClick={() => void handleSend()}
-            disabled={!nodeId || sending || !inputText.trim()}
-          >
-            {sending ? '…' : '发送'}
-          </button>
-          </div>
         </div>
       </div>
     </div>

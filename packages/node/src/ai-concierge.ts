@@ -30,11 +30,13 @@ export class AiConcierge {
   private nodeId: string
   private hubUrl: string
   private agentHandle: string
+  private token?: string
 
-  constructor(opts: { nodeId: string; hubUrl: string; agentHandle?: string }) {
+  constructor(opts: { nodeId: string; hubUrl: string; agentHandle?: string; token?: string }) {
     this.nodeId      = opts.nodeId
     this.hubUrl      = opts.hubUrl
     this.agentHandle = opts.agentHandle ?? opts.nodeId
+    this.token       = opts.token
   }
 
   // ─── 日程协商 ─────────────────────────────────────────────────────────────
@@ -223,7 +225,7 @@ export class AiConcierge {
 
     const res = await fetch(`${this.hubUrl}/api/social/send`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}) },
       body,
     })
 
@@ -258,6 +260,7 @@ export function createConcierge(opts: {
   nodeId: string
   hubUrl: string
   agentHandle?: string
+  token?: string
 }): AiConcierge {
   _instance = new AiConcierge(opts)
   return _instance

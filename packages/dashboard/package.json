@@ -1,6 +1,6 @@
 {
   "name": "@jackclaw/dashboard",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "JackClaw Dashboard — real-time React web UI for node status, reports, and ClawChat",
   "private": true,
   "type": "module",

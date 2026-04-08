@@ -1,32 +1,23 @@
-import { defineConfig } from 'vitepress'
-
-export default defineConfig({
-  title: 'JackClaw',
-  description: '让 AI 员工像真人一样协作',
+export default {
+  title: 'JackClaw SDK Docs',
+  description: 'JackClaw SDK、CLI 与 Hub API 文档站',
   lang: 'zh-CN',
+  cleanUrls: true,
 
   themeConfig: {
     nav: [
       { text: '首页', link: '/' },
-      { text: '快速开始', link: '/guide/quick-start' },
-      { text: 'API', link: '/api/protocol' },
-      { text: '架构', link: '/guide/architecture' },
+      { text: '快速开始', link: '/guide/getting-started' },
+      { text: '核心概念', link: '/guide/concepts' },
+      { text: 'API', link: '/api/sdk' },
     ],
-
     sidebar: {
       '/guide/': [
         {
-          text: '入门',
+          text: '指南',
           items: [
-            { text: '快速开始', link: '/guide/quick-start' },
-            { text: '架构总览', link: '/guide/architecture' },
-          ],
-        },
-        {
-          text: '进阶',
-          items: [
-            { text: 'ClawChat 使用指南', link: '/guide/clawchat' },
-            { text: '安全指南', link: '/guide/security' },
+            { text: '快速开始', link: '/guide/getting-started' },
+            { text: '核心概念', link: '/guide/concepts' },
           ],
         },
       ],
@@ -34,21 +25,22 @@ export default defineConfig({
         {
           text: 'API 参考',
           items: [
-            { text: '协议规范', link: '/api/protocol' },
-            { text: 'Hub REST API', link: '/api/hub' },
+            { text: '@jackclaw/sdk', link: '/api/sdk' },
             { text: 'CLI 命令', link: '/api/cli' },
+            { text: 'Hub REST API', link: '/api/rest' },
           ],
         },
       ],
     },
-
     socialLinks: [
-      { icon: 'github', link: 'https://github.com/jackclaw/jackclaw' },
+      { icon: 'github', link: 'https://github.com/DevJackKong/JackClawOS' },
     ],
-
+    search: {
+      provider: 'local',
+    },
     footer: {
       message: 'Released under the MIT License.',
-      copyright: 'Copyright © 2024–present JackClaw',
+      copyright: 'Copyright © 2024-present Jack Kong',
     },
   },
-})
+}

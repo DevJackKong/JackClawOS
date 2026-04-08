@@ -1,17 +1,13 @@
-// AuthContext — 认证上下文：user / token / login / logout / register
-// 自动从 localStorage 恢复会话，token 过期时清除并重定向至登录页
-
 import React, {
   createContext,
   useCallback,
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import { api, type UserProfile } from '../api.js';
-
-// ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface AuthUser extends UserProfile {}
 
@@ -25,26 +21,37 @@ export interface AuthContextValue {
   updateUser: (u: AuthUser) => void;
 }
 
-// ── Storage keys ──────────────────────────────────────────────────────────────
-
 const LS_USER_TOKEN = 'jackclaw_user_token';
-const LS_USER_DATA  = 'jackclaw_user_data';
+const LS_USER_DATA = 'jackclaw_user_data';
+const REFRESH_AHEAD_MS = 2 * 60 * 1000;
 
-// ── JWT exp helper ─────────────────────────────────────────────────────────
+interface TokenPayload {
+  exp?: number;
+}
 
-function isTokenExpired(token: string): boolean {
+function decodeTokenPayload(token: string): TokenPayload | null {
   try {
     const [, payloadB64] = token.split('.');
-    if (!payloadB64) return true;
-    const payload = JSON.parse(atob(payloadB64.replace(/-/g, '+').replace(/_/g, '/')));
-    if (typeof payload.exp !== 'number') return false;
-    return Date.now() / 1000 > payload.exp;
+    if (!payloadB64) return null;
+    const normalized = payloadB64.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = normalized.padEnd(normalized.length + ((4 - (normalized.length % 4)) % 4), '=');
+    return JSON.parse(atob(padded)) as TokenPayload;
   } catch {
-    return true;
+    return null;
   }
 }
 
-// ── Context ───────────────────────────────────────────────────────────────────
+function getTokenExpiryMs(token: string): number | null {
+  const payload = decodeTokenPayload(token);
+  if (typeof payload?.exp !== 'number') return null;
+  return payload.exp * 1000;
+}
+
+function isTokenExpired(token: string): boolean {
+  const expMs = getTokenExpiryMs(token);
+  if (!expMs) return false;
+  return Date.now() >= expMs;
+}
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
@@ -54,78 +61,63 @@ export function useAuth(): AuthContextValue {
   return ctx;
 }
 
-// ── Provider ──────────────────────────────────────────────────────────────────
-
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser]     = useState<AuthUser | null>(null);
-  const [token, setToken]   = useState<string | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Restore session from localStorage on mount
-  useEffect(() => {
-    const storedToken = localStorage.getItem(LS_USER_TOKEN);
-    const storedUser  = localStorage.getItem(LS_USER_DATA);
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const refreshInFlightRef = useRef<Promise<void> | null>(null);
 
-    if (storedToken && storedUser) {
-      if (isTokenExpired(storedToken)) {
-        // Expired client-side — clear immediately
-        localStorage.removeItem(LS_USER_TOKEN);
-        localStorage.removeItem(LS_USER_DATA);
-        setLoading(false);
-      } else {
-        // Optimistically restore from cache, then verify with server
-        try {
-          setToken(storedToken);
-          setUser(JSON.parse(storedUser) as AuthUser);
-        } catch {
-          localStorage.removeItem(LS_USER_TOKEN);
-          localStorage.removeItem(LS_USER_DATA);
-          setLoading(false);
-          return;
-        }
-        // Verify token is still valid server-side
-        api.auth.me(storedToken)
-          .then(profile => {
-            // Update user with fresh data from server
-            const updated = profile as AuthUser;
-            setUser(updated);
-            localStorage.setItem(LS_USER_DATA, JSON.stringify(updated));
-          })
-          .catch(() => {
-            // Token rejected by server — clear session
-            localStorage.removeItem(LS_USER_TOKEN);
-            localStorage.removeItem(LS_USER_DATA);
-            setToken(null);
-            setUser(null);
-          })
-          .finally(() => setLoading(false));
-        return; // setLoading(false) handled in .finally
-      }
-    } else {
-      setLoading(false);
+  const clearRefreshTimer = useCallback(() => {
+    if (refreshTimerRef.current) {
+      clearTimeout(refreshTimerRef.current);
+      refreshTimerRef.current = null;
     }
   }, []);
 
-  // Periodic expiry check (every 60s)
-  useEffect(() => {
-    if (!token) return;
-    const iv = setInterval(() => {
-      if (isTokenExpired(token)) {
-        localStorage.removeItem(LS_USER_TOKEN);
-        localStorage.removeItem(LS_USER_DATA);
-        setToken(null);
-        setUser(null);
-      }
-    }, 60_000);
-    return () => clearInterval(iv);
-  }, [token]);
+  const clearSession = useCallback(() => {
+    clearRefreshTimer();
+    localStorage.removeItem(LS_USER_TOKEN);
+    localStorage.removeItem(LS_USER_DATA);
+    setToken(null);
+    setUser(null);
+  }, [clearRefreshTimer]);
 
-  const persist = useCallback((t: string, u: AuthUser) => {
-    localStorage.setItem(LS_USER_TOKEN, t);
-    localStorage.setItem(LS_USER_DATA, JSON.stringify(u));
-    setToken(t);
-    setUser(u);
+  const persist = useCallback((nextToken: string, nextUser: AuthUser) => {
+    localStorage.setItem(LS_USER_TOKEN, nextToken);
+    localStorage.setItem(LS_USER_DATA, JSON.stringify(nextUser));
+    setToken(nextToken);
+    setUser(nextUser);
   }, []);
+
+  const refreshSession = useCallback(async (currentToken: string): Promise<string> => {
+    if (refreshInFlightRef.current) {
+      await refreshInFlightRef.current;
+      return localStorage.getItem(LS_USER_TOKEN) ?? currentToken;
+    }
+
+    const run = (async () => {
+      try {
+        const refreshed = await api.auth.refresh(currentToken);
+        persist(refreshed.token, refreshed.user as AuthUser);
+      } catch {
+        try {
+          const profile = await api.auth.me(currentToken);
+          persist(currentToken, profile as AuthUser);
+        } catch {
+          clearSession();
+          throw new Error('session_refresh_failed');
+        }
+      } finally {
+        refreshInFlightRef.current = null;
+      }
+    })();
+
+    refreshInFlightRef.current = run;
+    await run;
+    return localStorage.getItem(LS_USER_TOKEN) ?? currentToken;
+  }, [clearSession, persist]);
 
   const login = useCallback(async (handle: string, password: string) => {
     const res = await api.auth.login({ handle, password });
@@ -142,16 +134,64 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [persist]);
 
   const logout = useCallback(() => {
-    localStorage.removeItem(LS_USER_TOKEN);
-    localStorage.removeItem(LS_USER_DATA);
-    setToken(null);
-    setUser(null);
+    refreshInFlightRef.current = null;
+    clearSession();
+  }, [clearSession]);
+
+  const updateUser = useCallback((nextUser: AuthUser) => {
+    setUser(nextUser);
+    localStorage.setItem(LS_USER_DATA, JSON.stringify(nextUser));
   }, []);
 
-  const updateUser = useCallback((u: AuthUser) => {
-    setUser(u);
-    localStorage.setItem(LS_USER_DATA, JSON.stringify(u));
-  }, []);
+  useEffect(() => {
+    const storedToken = localStorage.getItem(LS_USER_TOKEN);
+    const storedUser = localStorage.getItem(LS_USER_DATA);
+
+    if (!storedToken || !storedUser) {
+      setLoading(false);
+      return;
+    }
+
+    if (isTokenExpired(storedToken)) {
+      clearSession();
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const parsedUser = JSON.parse(storedUser) as AuthUser;
+      setToken(storedToken);
+      setUser(parsedUser);
+    } catch {
+      clearSession();
+      setLoading(false);
+      return;
+    }
+
+    api.auth.me(storedToken)
+      .then(profile => {
+        persist(storedToken, profile as AuthUser);
+      })
+      .catch(() => {
+        clearSession();
+      })
+      .finally(() => setLoading(false));
+  }, [clearSession, persist]);
+
+  useEffect(() => {
+    clearRefreshTimer();
+    if (!token) return;
+
+    const expiryMs = getTokenExpiryMs(token);
+    if (!expiryMs) return;
+
+    const delay = Math.max(expiryMs - Date.now() - REFRESH_AHEAD_MS, 0);
+    refreshTimerRef.current = setTimeout(() => {
+      void refreshSession(token).catch(() => undefined);
+    }, delay);
+
+    return () => clearRefreshTimer();
+  }, [clearRefreshTimer, refreshSession, token]);
 
   const value = useMemo<AuthContextValue>(
     () => ({ user, token, loading, login, register, logout, updateUser }),

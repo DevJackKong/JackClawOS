@@ -65,9 +65,12 @@ export class ChannelBridge {
   private hubUrl: string
   private nodeId: string
 
-  constructor(opts: { hubUrl: string; nodeId: string }) {
+  private token?: string
+
+  constructor(opts: { hubUrl: string; nodeId: string; token?: string }) {
     this.hubUrl = opts.hubUrl
     this.nodeId = opts.nodeId
+    this.token = opts.token
   }
 
   // ── Channel registry ────────────────────────────────────────────────────────
@@ -147,7 +150,7 @@ export class ChannelBridge {
       : `${this.hubUrl}/api/chat/send`
 
     try {
-      await axios.post(endpoint, payload, { timeout: 10_000 })
+      await axios.post(endpoint, payload, { timeout: 10_000, headers: this.token ? { Authorization: `Bearer ${this.token}` } : {} })
       console.log(`[bridge] IM→ClawChat [${msg.channel}] from=${msg.senderId} → ${endpoint}`)
     } catch (err: any) {
       console.error(`[bridge] IM→ClawChat failed [${msg.channel}]:`, err?.response?.data ?? err.message)

@@ -12,8 +12,15 @@ import { ContactsPage } from './components/ContactsPage.js';
 import { AuthProvider, useAuth } from './components/AuthContext.js';
 import { AuthPage } from './components/AuthPage.js';
 import { ProfilePage } from './components/ProfilePage.js';
+import { AdminOverview } from './components/AdminOverview.js';
+import { TenantManager } from './components/TenantManager.js';
+import { AuditLog } from './components/AuditLog.js';
+import { RiskRules } from './components/RiskRules.js';
+import { ApprovalList } from './components/ApprovalList.js';
+import { MembersRoles } from './components/MembersRoles.js';
 
-type Tab = 'nodes' | 'chat' | 'reports' | 'plan' | 'stats' | 'contacts' | 'profile';
+type Tab = 'nodes' | 'chat' | 'reports' | 'plan' | 'stats' | 'contacts' | 'profile'
+  | 'admin' | 'tenants' | 'members' | 'audit' | 'risk' | 'approval';
 type HubStatus = 'checking' | 'ok' | 'error';
 
 const LS_URL   = 'jackclaw_hub_url';
@@ -32,11 +39,21 @@ const MAIN_TABS: { id: Tab; label: string; icon: string }[] = [
   { id: 'contacts', label: '联系人', icon: '◫' },
 ];
 
+const ADMIN_TABS: { id: Tab; label: string; icon: string }[] = [
+  { id: 'admin',    label: '概览',  icon: '◉' },
+  { id: 'tenants',  label: '租户',  icon: '◈' },
+  { id: 'members',  label: '成员',  icon: '◫' },
+  { id: 'audit',    label: '审计',  icon: '◎' },
+  { id: 'risk',     label: '风控',  icon: '◐' },
+  { id: 'approval', label: '审批',  icon: '◑' },
+];
+
 // ── Dashboard (shown when logged in) ─────────────────────────────────────────
 
 const Dashboard: React.FC = () => {
   const { user, token: userToken } = useAuth();
 
+  const [mode, setMode] = useState<'main' | 'admin'>('main');
   const [tab, setTab]   = useState<Tab>('nodes');
   const [url, setUrl]   = useState(() => getStored(LS_URL));
   const [storedToken, setStoredToken] = useState(() => getStored(LS_TOKEN));
@@ -90,7 +107,19 @@ const Dashboard: React.FC = () => {
             <button
               key={t.id}
               className={`tab-btn ${tab === t.id ? 'tab-active' : ''}`}
-              onClick={() => setTab(t.id)}
+              onClick={() => { setMode('main'); setTab(t.id); }}
+            >
+              <span className="tab-icon">{t.icon}</span>
+              <span className="tab-label">{t.label}</span>
+            </button>
+          ))}
+          <span style={{ width: 1, height: 20, background: '#30363d', margin: '0 6px' }} />
+          {ADMIN_TABS.map(t => (
+            <button
+              key={t.id}
+              className={`tab-btn ${tab === t.id ? 'tab-active' : ''}`}
+              onClick={() => { setMode('admin'); setTab(t.id); }}
+              style={{ opacity: mode === 'admin' && tab === t.id ? 1 : 0.7 }}
             >
               <span className="tab-icon">{t.icon}</span>
               <span className="tab-label">{t.label}</span>
@@ -190,6 +219,7 @@ const Dashboard: React.FC = () => {
           </div>
         ) : (
           <>
+            {/* Main tabs */}
             {tab === 'nodes'    && <NodeList token={hubToken} />}
             {tab === 'chat'     && user && hubToken ? (
               <ChatApp
@@ -213,6 +243,13 @@ const Dashboard: React.FC = () => {
                 onStartChat={nodeId => { setSelectedNode(nodeId); setTab('chat'); }}
               />
             )}
+            {/* Admin tabs */}
+            {tab === 'admin'    && <AdminOverview token={hubToken} />}
+            {tab === 'tenants'  && <TenantManager token={hubToken} />}
+            {tab === 'members'  && <MembersRoles token={hubToken} />}
+            {tab === 'audit'    && <AuditLog token={hubToken} />}
+            {tab === 'risk'     && <RiskRules token={hubToken} />}
+            {tab === 'approval' && <ApprovalList token={hubToken} />}
           </>
         )}
       </main>

@@ -15,7 +15,14 @@ import os from 'os'
 import { randomUUID } from 'crypto'
 import { parseNaturalTime, parseDuration } from '@jackclaw/protocol'
 import type { ConciergeState, Reminder } from '@jackclaw/protocol'
-import { loadConfig, resolveHubUrl } from '../config-utils.js'
+import { loadConfig, resolveHubUrl, loadState as loadAuthState } from '../config-utils.js'
+
+function authHeaders(): Record<string, string> {
+  const state = loadAuthState()
+  if (state.token) return { Authorization: `Bearer ${state.token}` }
+  if (state.apiKey) return { Authorization: `Bearer ${state.apiKey}` }
+  return {}
+}
 
 // ─── 存储（与 AiConcierge 共享同一文件）──────────────────────────────────────
 
@@ -112,7 +119,7 @@ export function registerSchedule(program: Command): void {
           toAgent: normalAgent,
           content,
           type: 'schedule_request',
-        })
+        }, { headers: authHeaders() })
         console.log(chalk.green(`[concierge] 日程协商已发送 ✓  requestId=${requestId.slice(0, 8)}`))
         console.log(chalk.gray(`  目标：${normalAgent}  话题：${topic}（${duration} 分钟）`))
         console.log(chalk.gray(`  候选时间：`))

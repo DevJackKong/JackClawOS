@@ -60,6 +60,10 @@ export interface ChatMessage {
   content: string;
   createdAt: number;
   tokens?: number;
+  read?: boolean;
+  readBy?: string[];
+  recalled?: boolean;
+  recalledAt?: number;
   attachments?: Array<{ name: string; type: string; url?: string; data?: string }>;
 }
 
@@ -166,10 +170,46 @@ export interface SocialThread {
   messageCount: number;
 }
 
+export interface FileItem {
+  fileId: string;
+  filename: string;
+  mimeType: string;
+  size: number;
+  ext: string;
+  uploadedAt: number;
+  url: string;
+  thumbnailUrl?: string;
+}
+
+export interface FileUploadResponse {
+  fileId: string;
+  url: string;
+  filename: string;
+  size: number;
+  mimeType: string;
+  thumbnailUrl?: string;
+}
+
+export interface FileListResponse {
+  files: FileItem[];
+  total: number;
+  page: number;
+  limit: number;
+  totalSize: number;
+}
+
+export interface UploadFileOptions {
+  onProgress?: (percent: number, event: ProgressEvent<EventTarget>) => void;
+}
+
 // ── Auth helper ──────────────────────────────────────────────────────────────
 
 function authHeaders(token: string): Record<string, string> {
   return { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+}
+
+function bearerHeaders(token: string): Record<string, string> {
+  return { Authorization: `Bearer ${token}` };
 }
 
 async function req<T>(url: string, opts?: RequestInit): Promise<T> {
@@ -235,6 +275,12 @@ export const api = {
       req(`${BASE}/api/chat/inbox?nodeId=${encodeURIComponent(nodeId)}`, {
         headers: authHeaders(token),
       }),
+
+    recall: (token: string, id: string): Promise<{ status: string; message: ChatMessage }> =>
+      req(`${BASE}/api/chat/messages/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        headers: authHeaders(token),
+      }),
   },
 
   stats: (token: string): Promise<TokenStatsResponse> =>
@@ -271,6 +317,12 @@ export const api = {
 
     me: (token: string): Promise<UserProfile> =>
       req(`${BASE}/api/auth/me`, { headers: authHeaders(token) }),
+
+    refresh: (token: string): Promise<AuthResponse> =>
+      req(`${BASE}/api/auth/refresh`, {
+        method: 'POST',
+        headers: authHeaders(token),
+      }),
 
     updateProfile: (token: string, body: Partial<Omit<UserProfile, 'handle'>>): Promise<UserProfile> =>
       req(`${BASE}/api/auth/profile`, {
@@ -315,5 +367,145 @@ export const api = {
   presence: {
     online: (token: string): Promise<{ users: Array<{ handle: string; nodeId: string; displayName: string; role: string; onlineSince: number | null }>; count: number }> =>
       req(`${BASE}/api/presence/online`, { headers: authHeaders(token) }),
+  },
+
+  files: {
+    uploadFile: (token: string, file: File, options?: UploadFileOptions): Promise<FileUploadResponse> =>
+      new Promise<FileUploadResponse>((resolve, reject) => {
+        const formData = new FormData();
+        formData.append('file', file);
+
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', `${BASE}/api/files/upload`);
+        Object.entries(bearerHeaders(token)).forEach(([key, value]) => {
+          xhr.setRequestHeader(key, value);
+        });
+        xhr.responseType = 'json';
+
+        xhr.upload.onprogress = event => {
+          if (!event.lengthComputable) return;
+          const percent = Math.round((event.loaded / event.total) * 100);
+          options?.onProgress?.(percent, event);
+        };
+
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve(xhr.response as FileUploadResponse);
+            return;
+          }
+
+          const fallback = typeof xhr.response === 'object' && xhr.response && 'error' in xhr.response
+            ? String((xhr.response as { error?: string }).error)
+            : xhr.responseText || `HTTP ${xhr.status}`;
+          reject(new Error(fallback));
+        };
+
+        xhr.onerror = () => reject(new Error('Upload failed'));
+        xhr.send(formData);
+      }),
+
+    downloadFile: (token: string, fileId: string): Promise<Blob> =>
+      fetch(`${BASE}/api/files/${encodeURIComponent(fileId)}`, {
+        headers: bearerHeaders(token),
+      }).then(async res => {
+        if (!res.ok) {
+          const text = await res.text().catch(() => res.statusText);
+          throw new Error(`HTTP ${res.status}: ${text}`);
+        }
+        return res.blob();
+      }),
+
+    listFiles: (token: string, page = 1, limit = 20): Promise<FileListResponse> =>
+      req(`${BASE}/api/files/list?page=${page}&limit=${limit}`, {
+        headers: authHeaders(token),
+      }),
+  },
+
+  // ── Admin APIs ─────────────────────────────────────────────────────────────
+
+  dashboard: {
+    overview: (token: string): Promise<{ totalNodes: number; onlineNodes: number; totalMessages: number; totalTasks: number; pendingApprovals: number; totalContacts: number; recentActivity: any[] }> =>
+      req(`${BASE}/api/dashboard/overview`, { headers: authHeaders(token) }),
+    timeline: (token: string): Promise<any[]> =>
+      req(`${BASE}/api/dashboard/timeline`, { headers: authHeaders(token) }),
+  },
+
+  tenant: {
+    list: (token: string): Promise<{ tenants: any[] }> =>
+      req(`${BASE}/api/tenant`, { headers: authHeaders(token) }),
+    get: (token: string, id: string): Promise<any> =>
+      req(`${BASE}/api/tenant/${id}`, { headers: authHeaders(token) }),
+    create: (token: string, body: { name: string; slug: string; plan?: string }): Promise<any> =>
+      req(`${BASE}/api/tenant`, { method: 'POST', headers: authHeaders(token), body: JSON.stringify(body) }),
+    update: (token: string, id: string, body: Record<string, unknown>): Promise<any> =>
+      req(`${BASE}/api/tenant/${id}`, { method: 'PATCH', headers: authHeaders(token), body: JSON.stringify(body) }),
+    delete: (token: string, id: string): Promise<any> =>
+      req(`${BASE}/api/tenant/${id}`, { method: 'DELETE', headers: authHeaders(token) }),
+  },
+
+  org: {
+    list: (token: string): Promise<{ orgs: any[] }> =>
+      req(`${BASE}/api/org`, { headers: authHeaders(token) }),
+    get: (token: string, id: string): Promise<any> =>
+      req(`${BASE}/api/org/${id}`, { headers: authHeaders(token) }),
+    create: (token: string, body: { tenantId: string; name: string; slug?: string }): Promise<any> =>
+      req(`${BASE}/api/org`, { method: 'POST', headers: authHeaders(token), body: JSON.stringify(body) }),
+    update: (token: string, id: string, body: Record<string, unknown>): Promise<any> =>
+      req(`${BASE}/api/org/${id}`, { method: 'PATCH', headers: authHeaders(token), body: JSON.stringify(body) }),
+    delete: (token: string, id: string): Promise<any> =>
+      req(`${BASE}/api/org/${id}`, { method: 'DELETE', headers: authHeaders(token) }),
+  },
+
+  members: {
+    list: (token: string): Promise<{ members: any[] }> =>
+      req(`${BASE}/api/members`, { headers: authHeaders(token) }),
+    add: (token: string, body: { tenantId: string; orgId: string; userId: string; role: string }): Promise<any> =>
+      req(`${BASE}/api/members`, { method: 'POST', headers: authHeaders(token), body: JSON.stringify(body) }),
+    update: (token: string, id: string, body: Record<string, unknown>): Promise<any> =>
+      req(`${BASE}/api/members/${id}`, { method: 'PATCH', headers: authHeaders(token), body: JSON.stringify(body) }),
+    remove: (token: string, id: string): Promise<any> =>
+      req(`${BASE}/api/members/${id}`, { method: 'DELETE', headers: authHeaders(token) }),
+  },
+
+  roles: {
+    list: (token: string): Promise<{ roles: any[] }> =>
+      req(`${BASE}/api/roles`, { headers: authHeaders(token) }),
+    get: (token: string, id: string): Promise<any> =>
+      req(`${BASE}/api/roles/${id}`, { headers: authHeaders(token) }),
+    create: (token: string, body: { name: string; permissions: string[] }): Promise<any> =>
+      req(`${BASE}/api/roles`, { method: 'POST', headers: authHeaders(token), body: JSON.stringify(body) }),
+    update: (token: string, id: string, body: Record<string, unknown>): Promise<any> =>
+      req(`${BASE}/api/roles/${id}`, { method: 'PATCH', headers: authHeaders(token), body: JSON.stringify(body) }),
+    delete: (token: string, id: string): Promise<any> =>
+      req(`${BASE}/api/roles/${id}`, { method: 'DELETE', headers: authHeaders(token) }),
+    assign: (token: string, body: { userId: string; roleId: string }): Promise<any> =>
+      req(`${BASE}/api/roles/assign`, { method: 'POST', headers: authHeaders(token), body: JSON.stringify(body) }),
+    userRoles: (token: string, userId: string): Promise<{ roles: any[] }> =>
+      req(`${BASE}/api/roles/user/${userId}`, { headers: authHeaders(token) }),
+  },
+
+  audit: {
+    list: (token: string, query?: string): Promise<{ logs: any[] }> =>
+      req(`${BASE}/api/audit${query ? `?${query}` : ''}`, { headers: authHeaders(token) }),
+  },
+
+  risk: {
+    rules: (token: string): Promise<{ rules: any[] }> =>
+      req(`${BASE}/api/risk/rules`, { headers: authHeaders(token) }),
+    createRule: (token: string, body: Record<string, unknown>): Promise<any> =>
+      req(`${BASE}/api/risk/rules`, { method: 'POST', headers: authHeaders(token), body: JSON.stringify(body) }),
+    deleteRule: (token: string, id: string): Promise<any> =>
+      req(`${BASE}/api/risk/rules/${id}`, { method: 'DELETE', headers: authHeaders(token) }),
+    evaluate: (token: string, body: Record<string, unknown>): Promise<any> =>
+      req(`${BASE}/api/risk/evaluate`, { method: 'POST', headers: authHeaders(token), body: JSON.stringify(body) }),
+  },
+
+  approval: {
+    list: (token: string): Promise<{ approvals: any[] }> =>
+      req(`${BASE}/api/approval`, { headers: authHeaders(token) }),
+    approve: (token: string, id: string): Promise<any> =>
+      req(`${BASE}/api/approval/${id}/approve`, { method: 'POST', headers: authHeaders(token) }),
+    reject: (token: string, id: string, reason?: string): Promise<any> =>
+      req(`${BASE}/api/approval/${id}/reject`, { method: 'POST', headers: authHeaders(token), body: JSON.stringify({ reason }) }),
   },
 };

@@ -1,6 +1,6 @@
 {
   "name": "@jackclaw/payment-vault",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "JackClaw Payment Vault — isolated compliance-first payment engine",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -10,7 +10,7 @@
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
-    "@jackclaw/protocol": "^0.2.0"
+    "@jackclaw/protocol": "^0.3.0"
   },
   "devDependencies": {
     "typescript": "^5.4.0",

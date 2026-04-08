@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JackClaw Dashboard</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0d0d0f;
+    --surface: #16181c;
+    --surface2: #1e2026;
+    --border: #2a2d35;
+    --text: #e2e4e9;
+    --text-muted: #6b7280;
+    --accent: #6366f1;
+    --accent-dim: #3730a3;
+    --green: #22c55e;
+    --yellow: #eab308;
+    --red: #ef4444;
+    --radius: 10px;
+    --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 14px;
+    line-height: 1.5;
+    min-height: 100vh;
+  }
+
+  /* ── Layout ── */
+  .container { max-width: 1100px; margin: 0 auto; padding: 0 16px; }
+
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 14px 0;
+    position: sticky; top: 0; z-index: 100;
+  }
+  .header-inner {
+    display: flex; align-items: center; gap: 12px;
+    flex-wrap: wrap;
+  }
+  .logo { font-size: 18px; font-weight: 700; color: var(--accent); flex-shrink: 0; }
+
+  .config-row {
+    display: flex; gap: 8px; flex: 1; flex-wrap: wrap; align-items: center;
+    min-width: 0;
+  }
+  .config-row input {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 13px;
+    outline: none;
+    transition: border-color .15s;
+  }
+  .config-row input:focus { border-color: var(--accent); }
+  #inp-url { flex: 1; min-width: 160px; }
+  #inp-token { flex: 1.5; min-width: 180px; font-family: monospace; }
+
+  .btn {
+    padding: 6px 14px; border-radius: 6px; border: none;
+    cursor: pointer; font-size: 13px; font-weight: 500;
+    transition: opacity .15s;
+  }
+  .btn:hover { opacity: .85; }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-ghost { background: var(--surface2); color: var(--text-muted); border: 1px solid var(--border); }
+
+  .status-bar {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    font-size: 12px; color: var(--text-muted);
+    margin-top: 4px;
+  }
+  .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+  .dot-green { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .dot-grey  { background: var(--border); }
+
+  main { padding: 24px 0 48px; }
+
+  /* ── Section titles ── */
+  .section-title {
+    font-size: 11px; font-weight: 600; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--text-muted);
+    margin-bottom: 12px;
+  }
+
+  /* ── Node cards ── */
+  .cards-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 12px;
+    margin-bottom: 36px;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+  }
+  .card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  .card-name { font-weight: 600; font-size: 15px; }
+  .badge {
+    font-size: 11px; padding: 2px 8px; border-radius: 20px;
+    background: var(--surface2); color: var(--text-muted);
+    border: 1px solid var(--border);
+  }
+  .card-id { font-size: 11px; color: var(--text-muted); font-family: monospace; margin-bottom: 6px; }
+  .card-meta { font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
+  .card-meta span { color: var(--text); }
+  .online-row { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+  .online-label { font-size: 12px; }
+  .online-yes { color: var(--green); }
+  .online-no  { color: var(--text-muted); }
+
+  /* ── Summary section ── */
+  .summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 14px;
+  }
+  .role-group {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .role-header {
+    background: var(--surface2);
+    padding: 8px 14px;
+    font-size: 12px; font-weight: 600; letter-spacing: .06em;
+    text-transform: uppercase; color: var(--accent);
+    border-bottom: 1px solid var(--border);
+  }
+  .role-node { padding: 10px 14px; border-bottom: 1px solid var(--border); }
+  .role-node:last-child { border-bottom: none; }
+  .role-node-name { font-weight: 500; font-size: 13px; margin-bottom: 4px; }
+  .role-node-summary { font-size: 13px; color: #c4c9d4; line-height: 1.55; }
+  .role-node-time { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+
+  /* ── Empty / error states ── */
+  .empty {
+    text-align: center; padding: 40px 20px;
+    color: var(--text-muted); font-size: 13px;
+  }
+  .error-banner {
+    background: #2d1012; border: 1px solid #7f1d1d;
+    color: #fca5a5; border-radius: 8px;
+    padding: 10px 14px; font-size: 13px;
+    margin-bottom: 16px;
+  }
+
+  /* ── Refresh countdown ── */
+  #countdown { font-variant-numeric: tabular-nums; }
+
+  /* ── Mobile ── */
+  @media (max-width: 600px) {
+    .config-row input { min-width: 0; width: 100%; }
+    #inp-url, #inp-token { flex: 1 1 100%; }
+    .cards-grid { grid-template-columns: 1fr; }
+    .summary-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="container">
+    <div class="header-inner">
+      <div class="logo">🦞 JackClaw</div>
+      <div class="config-row">
+        <input id="inp-url"   type="url"      placeholder="Hub URL  https://hub.example.com" autocomplete="off" />
+        <input id="inp-token" type="password" placeholder="JWT Token" autocomplete="off" />
+        <button class="btn btn-primary" onclick="saveConfig()">保存</button>
+        <button class="btn btn-ghost"   onclick="refresh()">刷新</button>
+      </div>
+    </div>
+    <div class="status-bar container" style="padding:0">
+      <span id="status-dot" class="dot dot-grey"></span>
+      <span id="status-text">未连接</span>
+      &nbsp;·&nbsp; 自动刷新：<span id="countdown">60</span>s
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="container">
+    <div id="error-area"></div>
+
+    <!-- Nodes -->
+    <div class="section-title">节点状态</div>
+    <div id="nodes-grid" class="cards-grid">
+      <div class="empty">等待数据…</div>
+    </div>
+
+    <!-- Summary -->
+    <div class="section-title" id="summary-title">今日汇报摘要</div>
+    <div id="summary-grid" class="summary-grid">
+      <div class="empty">等待数据…</div>
+    </div>
+  </div>
+</main>
+
+<script>
+// ── Config ──────────────────────────────────────────────────────────────────
+const LS_URL   = 'jackclaw_hub_url';
+const LS_TOKEN = 'jackclaw_hub_token';
+
+function loadConfig() {
+  document.getElementById('inp-url').value   = localStorage.getItem(LS_URL)   || '';
+  document.getElementById('inp-token').value = localStorage.getItem(LS_TOKEN) || '';
+}
+
+function saveConfig() {
+  const url   = document.getElementById('inp-url').value.trim().replace(/\/$/, '');
+  const token = document.getElementById('inp-token').value.trim();
+  if (!url) { alert('请输入 Hub URL'); return; }
+  localStorage.setItem(LS_URL, url);
+  localStorage.setItem(LS_TOKEN, token);
+  refresh();
+}
+
+function getConfig() {
+  return {
+    url:   localStorage.getItem(LS_URL)   || '',
+    token: localStorage.getItem(LS_TOKEN) || '',
+  };
+}
+
+// ── Fetch helpers ────────────────────────────────────────────────────────────
+async function apiFetch(path) {
+  const { url, token } = getConfig();
+  if (!url) throw new Error('未配置 Hub URL');
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = 'Bearer ' + token;
+  const res = await fetch(url + path, { headers });
+  if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
+  return res.json();
+}
+
+// ── Render helpers ───────────────────────────────────────────────────────────
+function timeAgo(ts) {
+  if (!ts) return '—';
+  const diff = Date.now() - ts;
+  const m = Math.floor(diff / 60000);
+  if (m < 1)  return '刚刚';
+  if (m < 60) return `${m} 分钟前`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h} 小时前`;
+  return `${Math.floor(h/24)} 天前`;
+}
+
+function isOnline(lastReportAt) {
+  if (!lastReportAt) return false;
+  return (Date.now() - lastReportAt) < 10 * 60 * 1000; // 10min
+}
+
+function renderNodes(nodes) {
+  const grid = document.getElementById('nodes-grid');
+  if (!nodes || nodes.length === 0) {
+    grid.innerHTML = '<div class="empty">暂无已注册节点</div>';
+    return;
+  }
+  grid.innerHTML = nodes.map(n => {
+    const online  = isOnline(n.lastReportAt);
+    const dotCls  = online ? 'dot-green' : 'dot-grey';
+    const lblCls  = online ? 'online-yes' : 'online-no';
+    const lblText = online ? '在线' : '离线';
+    return `
+      <div class="card">
+        <div class="card-header">
+          <span class="card-name">${esc(n.name)}</span>
+          <span class="badge">${esc(n.role)}</span>
+        </div>
+        <div class="card-id">${esc(n.nodeId)}</div>
+        <div class="card-meta">注册时间：<span>${fmtDate(n.registeredAt)}</span></div>
+        <div class="card-meta">最后汇报：<span>${timeAgo(n.lastReportAt)}</span></div>
+        <div class="online-row">
+          <span class="dot ${dotCls}"></span>
+          <span class="online-label ${lblCls}">${lblText}</span>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function renderSummary(data) {
+  const grid  = document.getElementById('summary-grid');
+  const title = document.getElementById('summary-title');
+  const today = new Date().toISOString().slice(0, 10);
+  title.textContent = `今日汇报摘要（${data.date ?? today}）— 共 ${data.reportingNodes ?? 0}/${data.totalNodes ?? 0} 节点汇报`;
+
+  const byRole = data.byRole ?? {};
+  const roles  = Object.keys(byRole);
+  if (roles.length === 0) {
+    grid.innerHTML = '<div class="empty">今日暂无汇报</div>';
+    return;
+  }
+  grid.innerHTML = roles.map(role => {
+    const group = byRole[role];
+    const nodesHtml = group.nodes.map(n => `
+      <div class="role-node">
+        <div class="role-node-name">${esc(n.name)}</div>
+        <div class="role-node-summary">${esc(n.summary)}</div>
+        <div class="role-node-time">${fmtDate(n.reportedAt)}</div>
+      </div>`).join('');
+    return `
+      <div class="role-group">
+        <div class="role-header">${esc(role)}</div>
+        ${nodesHtml}
+      </div>`;
+  }).join('');
+}
+
+function esc(str) {
+  return String(str ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function fmtDate(ts) {
+  if (!ts) return '—';
+  return new Date(ts).toLocaleString('zh-CN', { hour12: false });
+}
+
+// ── Status bar ───────────────────────────────────────────────────────────────
+function setStatus(ok, text) {
+  document.getElementById('status-dot').className  = 'dot ' + (ok ? 'dot-green' : 'dot-grey');
+  document.getElementById('status-text').textContent = text;
+}
+
+function showError(msg) {
+  document.getElementById('error-area').innerHTML =
+    msg ? `<div class="error-banner">⚠️ ${esc(msg)}</div>` : '';
+}
+
+// ── Main refresh ─────────────────────────────────────────────────────────────
+async function refresh() {
+  const { url } = getConfig();
+  if (!url) { setStatus(false, '未配置 Hub URL'); return; }
+  setStatus(false, '加载中…');
+  showError('');
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  try {
+    const [nodesRes, summaryRes] = await Promise.all([
+      apiFetch('/api/nodes'),
+      apiFetch(`/api/summary?date=${today}`),
+    ]);
+    renderNodes(nodesRes.nodes ?? []);
+    renderSummary(summaryRes);
+    setStatus(true, `已连接 · ${new Date().toLocaleTimeString('zh-CN', {hour12:false})}`);
+  } catch (err) {
+    setStatus(false, '连接失败');
+    showError(err.message);
+  }
+}
+
+// ── Auto-refresh countdown ───────────────────────────────────────────────────
+let _countdownVal = 60;
+let _countdownTimer = null;
+
+function startCountdown() {
+  clearInterval(_countdownTimer);
+  _countdownVal = 60;
+  _countdownTimer = setInterval(() => {
+    _countdownVal--;
+    document.getElementById('countdown').textContent = _countdownVal;
+    if (_countdownVal <= 0) {
+      _countdownVal = 60;
+      refresh();
+    }
+  }, 1000);
+}
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+loadConfig();
+const { url } = getConfig();
+if (url) refresh();
+startCountdown();
+</script>
+</body>
+</html>

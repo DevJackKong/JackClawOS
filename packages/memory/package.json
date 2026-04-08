@@ -1,6 +1,6 @@
 {
   "name": "@jackclaw/memory",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "JackClaw Agent Memory — 三层记忆架构，支持技能转移与教学隔离",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

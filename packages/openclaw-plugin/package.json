@@ -1,6 +1,6 @@
 {
   "name": "@jackclaw/openclaw-plugin",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "JackClaw OpenClaw Plugin — team reports and node status via any OpenClaw channel",
   "type": "module",
   "main": "dist/index.js",
@@ -14,7 +14,7 @@
     "node": ">=22"
   },
   "dependencies": {
-    "@jackclaw/protocol": "^0.2.0",
+    "@jackclaw/protocol": "^0.3.0",
     "ws": "^8.0.0"
   },
   "peerDependencies": {

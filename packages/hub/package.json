@@ -1,6 +1,6 @@
 {
   "name": "@jackclaw/hub",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "JackClaw Hub - CEO central node for receiving agent reports",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -11,10 +11,10 @@
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
-    "@jackclaw/memory": "^0.2.0",
-    "@jackclaw/payment-vault": "^0.2.0",
-    "@jackclaw/protocol": "^0.2.0",
-    "@jackclaw/watchdog": "^0.2.0",
+    "@jackclaw/memory": "^0.3.0",
+    "@jackclaw/payment-vault": "^0.3.0",
+    "@jackclaw/protocol": "^0.3.0",
+    "@jackclaw/watchdog": "^0.3.0",
     "axios": "^1.6.0",
     "better-sqlite3": "^9.6.0",
     "express": "^4.18.2",

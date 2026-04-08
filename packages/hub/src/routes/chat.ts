@@ -40,6 +40,27 @@ function getRecallTargets(msg: ChatMessage): string[] {
   return [...new Set(participants)]
 }
 
+// ─── Helper: enforce nodeId matches JWT identity ─────────────────────────────
+function enforceOwnership(req: Request, res: Response): string | null {
+  const requesterId = getRequesterId(req)
+  if (!requesterId) {
+    res.status(401).json({ error: 'Unauthorized — JWT required' })
+    return null
+  }
+  const nodeId = req.query.nodeId as string
+  if (!nodeId) {
+    res.status(400).json({ error: 'nodeId required' })
+    return null
+  }
+  // Allow if JWT identity matches the requested nodeId (exact or handle variants)
+  const variants = [requesterId, `user-${requesterId}`, requesterId.replace(/^user-/, '')]
+  if (!variants.includes(nodeId)) {
+    res.status(403).json({ error: 'Forbidden — can only access your own data' })
+    return null
+  }
+  return nodeId
+}
+
 // ─── REST 路由 ────────────────────────────────────────────────────────────────
 
 // 发送消息 — SECURITY: sender bound from JWT, body.from is ignored
@@ -112,13 +133,10 @@ router.delete('/messages/:id', (req: Request, res: Response) => {
 })
 
 // 拉取离线消息（Node 上线时调用）
-// 合并 chat inbox + social offlineQueue，支持 nodeId 或 handle 查询
+// SECURITY: only your own inbox — nodeId must match JWT identity
 router.get('/inbox', (req: Request, res: Response) => {
-  const nodeId = req.query.nodeId as string
-  if (!nodeId) {
-    res.status(400).json({ error: 'nodeId required' })
-    return
-  }
+  const nodeId = enforceOwnership(req, res)
+  if (!nodeId) return
 
   // 1. Chat store inbox — 查 nodeId 本身 + 可能的 handle 变体
   const chatMsgs = [
@@ -146,55 +164,72 @@ router.get('/inbox', (req: Request, res: Response) => {
   res.json({ messages: allMsgs, count: allMsgs.length })
 })
 
-// 会话列表
+// 会话列表 — SECURITY: only your own threads
 router.get('/threads', (req: Request, res: Response) => {
-  const nodeId = req.query.nodeId as string
-  if (!nodeId) {
-    res.status(400).json({ error: 'nodeId required' })
-    return
-  }
+  const nodeId = enforceOwnership(req, res)
+  if (!nodeId) return
   res.json({ threads: chatWorker.store.listThreads(nodeId) })
 })
 
-// 会话历史
+// 会话历史 — SECURITY: require JWT
 router.get('/thread/:id', (req: Request, res: Response) => {
+  const requesterId = getRequesterId(req)
+  if (!requesterId) {
+    res.status(401).json({ error: 'Unauthorized — JWT required' })
+    return
+  }
+  // TODO: verify requesterId is a participant of this thread
   res.json({ messages: chatWorker.store.getThread(req.params.id) })
 })
 
-// 创建会话
+// 创建会话 — SECURITY: require JWT, bind creator
 router.post('/thread', (req: Request, res: Response) => {
+  const requesterId = getRequesterId(req)
+  if (!requesterId) {
+    res.status(401).json({ error: 'Unauthorized — JWT required' })
+    return
+  }
   const { participants, title } = req.body
   if (!Array.isArray(participants) || participants.length < 2) {
     res.status(400).json({ error: 'participants must be array of 2+ nodeIds' })
     return
   }
+  // Ensure creator is a participant
+  if (!participants.includes(requesterId)) {
+    participants.push(requesterId)
+  }
   res.json({ thread: chatWorker.store.createThread(participants, title) })
 })
 
-// 创建群组
+// 创建群组 — SECURITY: bind createdBy from JWT
 router.post('/group/create', (req: Request, res: Response) => {
-  const { name, members, topic } = req.body
-  const nodeId    = req.query.nodeId as string | undefined
-  const createdBy = (req.body.createdBy ?? nodeId) as string | undefined
-  if (!name || !Array.isArray(members) || members.length < 2 || !createdBy) {
-    res.status(400).json({ error: 'name, members (2+), and createdBy required' })
+  const requesterId = getRequesterId(req)
+  if (!requesterId) {
+    res.status(401).json({ error: 'Unauthorized — JWT required' })
     return
   }
-  res.json({ group: chatWorker.store.createGroup(name, members, createdBy, topic) })
+  const { name, members, topic } = req.body
+  if (!name || !Array.isArray(members) || members.length < 2) {
+    res.status(400).json({ error: 'name and members (2+) required' })
+    return
+  }
+  res.json({ group: chatWorker.store.createGroup(name, members, requesterId, topic) })
 })
 
-// 列出我参与的群组
+// 列出我参与的群组 — SECURITY: only your own groups
 router.get('/groups', (req: Request, res: Response) => {
-  const nodeId = req.query.nodeId as string
-  if (!nodeId) {
-    res.status(400).json({ error: 'nodeId required' })
-    return
-  }
+  const nodeId = enforceOwnership(req, res)
+  if (!nodeId) return
   res.json({ groups: chatWorker.store.listGroups(nodeId) })
 })
 
-// 注册人类账号
+// 注册人类账号 — SECURITY: require JWT
 router.post('/human/register', (req: Request, res: Response) => {
+  const requesterId = getRequesterId(req)
+  if (!requesterId) {
+    res.status(401).json({ error: 'Unauthorized — JWT required' })
+    return
+  }
   const { humanId, displayName, agentNodeId, webhookUrl, feishuOpenId } = req.body ?? {}
   if (!humanId || !displayName) {
     res.status(400).json({ error: 'humanId and displayName required' })
@@ -204,12 +239,23 @@ router.post('/human/register', (req: Request, res: Response) => {
   res.json({ status: 'ok', human })
 })
 
-router.get('/humans', (_req: Request, res: Response) => {
+// 列出人类账号 — SECURITY: require JWT
+router.get('/humans', (req: Request, res: Response) => {
+  const requesterId = getRequesterId(req)
+  if (!requesterId) {
+    res.status(401).json({ error: 'Unauthorized — JWT required' })
+    return
+  }
   res.json({ humans: listHumans() })
 })
 
-// Worker stats (diagnostics)
-router.get('/stats', (_req: Request, res: Response) => {
+// Worker stats (diagnostics) — SECURITY: require JWT
+router.get('/stats', (req: Request, res: Response) => {
+  const requesterId = getRequesterId(req)
+  if (!requesterId) {
+    res.status(401).json({ error: 'Unauthorized — JWT required' })
+    return
+  }
   res.json(chatWorker.getStats())
 })
 

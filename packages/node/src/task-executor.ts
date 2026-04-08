@@ -93,7 +93,7 @@ export class TaskExecutor {
         chat: async (messages: Array<{ role: string; content: string }>, chatOpts?: { temperature?: number }) => {
           const result = await aiClient.call({
             systemPrompt: 'You are a JSON-only response engine. Return valid JSON only.',
-            messages,
+            messages: messages as any,
             maxTokens: 2048,
           })
           return result.content

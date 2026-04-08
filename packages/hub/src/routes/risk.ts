@@ -70,7 +70,7 @@ function evaluateCondition(rule: ConditionRule, ctx: RiskContext): boolean {
   if (!rule.field || !rule.op) return false
 
   // Safe field access — only allow known top-level ctx fields
-  const val = (ctx as Record<string, unknown>)[rule.field]
+  const val = (ctx as unknown as Record<string, unknown>)[rule.field]
 
   switch (rule.op) {
     case 'eq':         return val === rule.value

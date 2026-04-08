@@ -43,9 +43,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
   <span style="font-size:32px">🦞</span>
   <h1>JackClaw Dashboard</h1>
   <span id="hub-badge" class="badge">Connecting...</span>
-  <a href="/app/" style="margin-left:auto;color:#22c55e;font-size:13px;text-decoration:none">📱 Install App</a>
-  <a href="/react/" style="margin-left:8px;color:#60a5fa;font-size:13px;text-decoration:none">⚛️ React Dashboard</a>
-  <span style="color:#555;font-size:13px;margin-left:12px" id="hub-url"></span>
+  <span style="margin-left:auto;color:#555;font-size:13px" id="hub-url"></span>
 </div>
 <div class="refresh-bar">Auto-refresh every 5s · <span id="last-refresh">—</span></div>
 
@@ -70,22 +68,6 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
   <div class="card">
     <h2>🔐 Hub Info</h2>
     <div id="hub-info" style="color:#888">Loading...</div>
-  </div>
-
-  <div class="card" style="grid-column: 1 / -1;">
-    <h2>💰 Pending Payments (CEO Approval)</h2>
-    <div id="payment-count"><span class="stat" style="font-size:32px">0</span><div class="stat-label">awaiting approval</div></div>
-    <div id="payment-list" style="margin-top:12px"></div>
-  </div>
-
-  <div class="card" style="grid-column: 1 / -1;">
-    <h2>💬 ClawChat (Live)</h2>
-    <div id="chat-log" style="height:200px;overflow-y:auto;background:#111;border-radius:8px;padding:12px;margin-bottom:12px;font-family:monospace;"></div>
-    <div style="display:flex;gap:8px;">
-      <select id="chat-to" style="background:#222;color:#fff;border:1px solid #444;border-radius:6px;padding:8px 12px;font-size:13px;"><option>Loading nodes...</option></select>
-      <input id="chat-input" type="text" placeholder="Type a message..." style="flex:1;background:#222;color:#fff;border:1px solid #444;border-radius:6px;padding:8px 12px;font-size:14px;outline:none;" />
-      <button onclick="sendChat()" style="background:#22c55e;color:#000;border:none;border-radius:6px;padding:8px 20px;font-weight:600;cursor:pointer;font-size:14px;">Send</button>
-    </div>
   </div>
 </div>
 
@@ -142,20 +124,9 @@ async function refresh() {
   } else {
     nodeList.innerHTML = nodeArr.map(n => {
       const ago = n.lastReportAt ? Math.round((Date.now() - n.lastReportAt) / 60000) + 'm ago' : 'never';
-      let healthHtml = '';
-      if (n.health) {
-        const memMB = (n.health.memUsage / 1024 / 1024).toFixed(1);
-        const uptimeH = (n.health.uptime / 3600).toFixed(1);
-        const dotColor = n.health.status === 'online' ? '#22c55e' : '#ef4444';
-        healthHtml = '<div style="font-size:11px;color:#888;margin-top:4px">' +
-          '<span style="color:' + dotColor + '">●</span> ' + n.health.status +
-          ' · Mem: <b style="color:#60a5fa">' + memMB + ' MB</b>' +
-          ' · Up: <b style="color:#a78bfa">' + uptimeH + ' h</b>' +
-          '</div>';
-      }
-      return '<li class="node-item"><div class="node-dot' + (n.health && n.health.status === 'offline' ? ' offline' : '') + '"></div><div><div class="node-name">' +
+      return '<li class="node-item"><div class="node-dot"></div><div><div class="node-name">' +
         n.name + '</div><div class="node-role">' + n.role + ' · ' + n.nodeId.slice(0,12) +
-        '</div>' + healthHtml + '</div><div class="node-meta">Last report: ' + ago + '</div></li>';
+        '</div></div><div class="node-meta">Last report: ' + ago + '</div></li>';
     }).join('');
   }
 
@@ -177,94 +148,11 @@ async function refresh() {
     ).join('');
   }
 
-  // Pending payments
-  const payments = await api('GET', '/api/payment/pending', null, ceoToken);
-  const pendingList = payments.b?.requests || [];
-  document.querySelector('#payment-count .stat').textContent = pendingList.length;
-  const paymentListEl = document.getElementById('payment-list');
-  if (paymentListEl) {
-    if (!pendingList.length) {
-      paymentListEl.innerHTML = '<div class="empty">No pending payments</div>';
-    } else {
-      paymentListEl.innerHTML = pendingList.map(p =>
-        '<div class="report-item" style="display:flex;align-items:center;gap:12px">' +
-        '<div style="flex:1"><div class="report-from">' + p.nodeId + ' → ' + p.recipient + '</div>' +
-        '<div class="report-text">' + p.description + '</div></div>' +
-        '<div style="color:#22c55e;font-weight:700;font-size:18px">' + p.currency + ' ' + p.amount + '</div>' +
-        '<button onclick="approvePayment(\''+p.id+'\')" style="background:#22c55e;color:#000;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-weight:600">Approve</button>' +
-        '<button onclick="rejectPayment(\''+p.id+'\')" style="background:#ef4444;color:#fff;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-weight:600">Reject</button>' +
-        '</div>'
-      ).join('');
-    }
-  }
-
   document.getElementById('last-refresh').textContent = new Date().toLocaleTimeString();
-
-  // Update chat node selector
-  const sel = document.getElementById('chat-to');
-  if (sel && nodeArr.length > 0) {
-    const current = sel.value;
-    sel.innerHTML = nodeArr.map(n => '<option value="'+n.nodeId+'"'+(n.nodeId===current?' selected':'')+'>'+n.name+'</option>').join('');
-  }
 }
 
 refresh();
 setInterval(refresh, 5000);
-
-// ─── WebSocket Chat ─────────────────────────────────────────────────
-const chatNodeId = 'dashboard-user-' + Math.random().toString(36).slice(2,6);
-const wsUrl = location.origin.replace(/^http/, 'ws') + '/chat/ws?nodeId=' + chatNodeId;
-let chatWs;
-const chatLog = document.getElementById('chat-log');
-
-function connectChat() {
-  chatWs = new WebSocket(wsUrl);
-  chatWs.onopen = () => appendChat('system', 'Connected as ' + chatNodeId);
-  chatWs.onmessage = (e) => {
-    try {
-      const d = JSON.parse(e.data);
-      if (d.event === 'message') appendChat(d.data.from, d.data.content);
-      if (d.event === 'ack') {} // silent
-    } catch {}
-  };
-  chatWs.onclose = () => { appendChat('system', 'Disconnected. Reconnecting...'); setTimeout(connectChat, 2000); };
-}
-
-function appendChat(from, text) {
-  if (!chatLog) return;
-  const t = new Date().toLocaleTimeString().slice(0,5);
-  const cls = from === 'system' ? 'color:#666;font-style:italic' : from === chatNodeId ? 'color:#22c55e' : 'color:#60a5fa';
-  chatLog.innerHTML += '<div style="padding:2px 0"><span style="color:#555;font-size:11px">['+t+']</span> <span style="'+cls+';font-weight:600;font-size:12px">'+from+'</span>: <span style="color:#ddd;font-size:13px">'+text+'</span></div>';
-  chatLog.scrollTop = chatLog.scrollHeight;
-}
-
-function sendChat() {
-  const input = document.getElementById('chat-input');
-  const to = document.getElementById('chat-to');
-  if (!input || !to || !input.value.trim()) return;
-  const msg = {
-    id: 'dash-'+Date.now()+'-'+Math.random().toString(36).slice(2,5),
-    from: chatNodeId, to: to.value, content: input.value.trim(),
-    type: 'human', ts: Date.now(), signature: '', encrypted: false
-  };
-  if (chatWs && chatWs.readyState === 1) {
-    chatWs.send(JSON.stringify(msg));
-    appendChat(chatNodeId, input.value.trim());
-  }
-  input.value = '';
-}
-
-document.getElementById('chat-input')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendChat(); });
-connectChat();
-
-async function approvePayment(id) {
-  const r = await api('POST', '/api/payment/approve/' + id, {}, ceoToken);
-  if (r.s === 200) { appendChat('system', '✅ Payment approved'); refresh(); }
-}
-async function rejectPayment(id) {
-  const r = await api('POST', '/api/payment/reject/' + id, {}, ceoToken);
-  if (r.s === 200) { appendChat('system', '❌ Payment rejected'); refresh(); }
-}
 </script>
 </body>
 </html>

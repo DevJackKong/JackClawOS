@@ -1,0 +1,1 @@
+{"version":3,"file":"tenant-context.d.ts","sourceRoot":"","sources":["../../src/middleware/tenant-context.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAyB,cAAc,EAAY,MAAM,SAAS,CAAA;AAwB9E;;;GAGG;AACH,MAAM,WAAW,8BAA8B;IAC7C,aAAa,CAAC,EAAE,OAAO,CAAA;CACxB;AA2DD;;GAEG;AACH,wBAAgB,uBAAuB,CAAC,OAAO,GAAE,8BAAmC,GAAG,cAAc,CAiBpG;AAED,eAAe,uBAAuB,CAAA"}

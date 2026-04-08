@@ -36,6 +36,7 @@ import traceRoute from './routes/trace'
 import healthRoute from './routes/health'
 import agentCardRoute from './routes/agent-card'
 import auditRoute from './routes/audit'
+import learningRoute from './routes/learning'
 import riskRoute from './routes/risk'
 import pluginsRoute from './routes/plugins'
 import contactsRoute from './routes/contacts'
@@ -280,6 +281,7 @@ export function createServer(): Application {
   app.use('/api/tasks', tasksRoute)           // async task queue: submit, status, cancel
   app.use('/api/presence', presenceRoute)     // GET /:handle, GET /online — presence queries
   app.use('/api/audit', auditRoute)
+  app.use('/api', learningRoute)           // skills library + reflexion
   app.use('/api/risk', riskRoute)
   app.use('/api/plugins', pluginsRoute)       // GET / — list plugins; GET /stats; GET /events
   app.use('/api/contacts', contactsRoute)

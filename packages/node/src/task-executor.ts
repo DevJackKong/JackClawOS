@@ -14,6 +14,8 @@ import type { AiClient } from './ai-client'
 import type { OwnerMemory } from './owner-memory'
 import type { ToolDefinition, ToolCallResult } from './tools/index'
 import { executeTool, getToolsForLevel } from './tools/index'
+import { SkillLibrary } from './skill-library'
+import { Reflexion } from './reflexion'
 
 // ─── Public Types ─────────────────────────────────────────────────────────────
 
@@ -77,13 +79,32 @@ function buildSystemPrompt(
 
 export class TaskExecutor {
   private history: TaskResult[] = []
+  private skillLibrary?: SkillLibrary
+  private reflexion?: Reflexion
 
   constructor(
     private aiClient: AiClient,
     private ownerMemory: OwnerMemory,
-  ) {}
+    opts?: { nodeId?: string }
+  ) {
+    if (opts?.nodeId) {
+      // LLM adapter for SkillLibrary/Reflexion (duck-typed)
+      const llmAdapter = {
+        chat: async (messages: Array<{ role: string; content: string }>, chatOpts?: { temperature?: number }) => {
+          const result = await aiClient.call({
+            systemPrompt: 'You are a JSON-only response engine. Return valid JSON only.',
+            messages,
+            maxTokens: 2048,
+          })
+          return result.content
+        }
+      }
+      this.skillLibrary = new SkillLibrary(opts.nodeId, llmAdapter)
+      this.reflexion = new Reflexion(opts.nodeId, llmAdapter)
+    }
+  }
 
-  // ── Main execute ────────────────────────────────────────────────────────────
+  // ── Main execute (with learning) ─────────────────────────────────────────────
 
   async execute(task: TaskRequest): Promise<TaskResult> {
     const tools = task.tools ?? getToolsForLevel(task.permissionLevel ?? 0)
@@ -95,13 +116,22 @@ export class TaskExecutor {
     const ac = new AbortController()
     activeTasks.set(task.id, ac)
 
+    // ── Pre-task: query skills + reflexion context ──
+    const learningContext = await this._buildLearningContext(task.prompt)
+    const usedSkillIds: string[] = learningContext.skillIds
+
     try {
       const ownerCtx = this._buildOwnerContext()
       const systemPrompt = buildSystemPrompt(task, ownerCtx)
 
+      // Inject learning context into prompt
+      const enrichedPrompt = learningContext.text
+        ? `${task.prompt}\n\n${learningContext.text}`
+        : task.prompt
+
       const result = await this.aiClient.call({
         systemPrompt,
-        messages: [{ role: 'user', content: task.prompt }],
+        messages: [{ role: 'user', content: enrichedPrompt }],
         model: task.model,
         maxTokens: task.maxTokens ?? 4096,
       })
@@ -121,6 +151,9 @@ export class TaskExecutor {
       this.history.unshift(taskResult)
       if (this.history.length > 100) this.history.pop()
 
+      // ── Post-task: extract skill + reflect (async, non-blocking) ──
+      this._postTaskLearning(task, taskResult, usedSkillIds).catch(() => {})
+
       return taskResult
     } catch (err: any) {
       const taskResult: TaskResult = {
@@ -133,6 +166,10 @@ export class TaskExecutor {
         error: (err as Error).message,
       }
       this.history.unshift(taskResult)
+
+      // Reflect on failure too
+      this._postTaskLearning(task, taskResult, usedSkillIds).catch(() => {})
+
       return taskResult
     } finally {
       activeTasks.delete(task.id)
@@ -301,6 +338,101 @@ export class TaskExecutor {
       return ''
     }
   }
+
+  // ── Learning: pre-task context ──────────────────────────────────────────────
+
+  private async _buildLearningContext(prompt: string): Promise<{ text: string; skillIds: string[] }> {
+    const parts: string[] = []
+    const skillIds: string[] = []
+
+    // 1. Search relevant skills
+    if (this.skillLibrary) {
+      try {
+        const matches = await this.skillLibrary.searchSkills(prompt, 3)
+        if (matches.length > 0) {
+          parts.push('--- RELEVANT SKILLS FROM PAST EXPERIENCE ---')
+          for (const m of matches) {
+            const skill = this.skillLibrary.useSkill(m.skill.id)
+            if (skill) {
+              skillIds.push(skill.id)
+              parts.push(`[Skill: ${skill.name}] (success rate: ${Math.round(skill.successRate * 100)}%)`)
+              parts.push(skill.code)
+              parts.push('')
+            }
+          }
+          parts.push('--- END SKILLS ---')
+        }
+      } catch { /* skill search failed, continue without */ }
+    }
+
+    // 2. Get reflexion context
+    if (this.reflexion) {
+      try {
+        const ctx = this.reflexion.getReflexionContext(prompt)
+        if (ctx.summary) {
+          parts.push('')
+          parts.push('--- SELF-REFLECTION FROM PAST TASKS ---')
+          parts.push(ctx.summary)
+          if (ctx.chainedStrategy) {
+            parts.push(`⚠️ ${ctx.chainedStrategy}`)
+          }
+          parts.push('--- END REFLECTION ---')
+        }
+      } catch { /* reflexion failed, continue without */ }
+    }
+
+    return { text: parts.join('\n'), skillIds }
+  }
+
+  // ── Learning: post-task extraction + reflection ─────────────────────────────
+
+  private async _postTaskLearning(task: TaskRequest, result: TaskResult, usedSkillIds: string[]): Promise<void> {
+    const success = result.status === 'completed'
+
+    // 1. Extract skill from successful tasks
+    if (this.skillLibrary && success) {
+      try {
+        await this.skillLibrary.extractSkill(task.prompt, result.output, true)
+      } catch { /* non-critical */ }
+
+      // Feedback on used skills
+      for (const skillId of usedSkillIds) {
+        this.skillLibrary.feedbackSkill(skillId, success)
+      }
+
+      // Evolve skills that have been used enough
+      for (const skillId of usedSkillIds) {
+        try {
+          await this.skillLibrary.evolveSkill(skillId)
+        } catch { /* non-critical */ }
+      }
+    }
+
+    // 2. Generate reflection
+    if (this.reflexion) {
+      try {
+        await this.reflexion.reflect({
+          taskId: task.id,
+          taskDescription: task.prompt.slice(0, 500),
+          taskResult: result.output.slice(0, 1500),
+          success,
+          duration: result.duration,
+          tokenUsage: result.tokenUsage,
+          skillsUsed: usedSkillIds,
+        })
+      } catch { /* non-critical */ }
+    }
+  }
+
+  // ── Expose learning modules for external access ─────────────────────────────
+
+  getSkillLibrary(): SkillLibrary | undefined {
+    return this.skillLibrary
+  }
+
+  getReflexion(): Reflexion | undefined {
+    return this.reflexion
+  }
 }
 
 // ─── Singleton factory ────────────────────────────────────────────────────────
@@ -313,7 +445,7 @@ export function getTaskExecutor(
   ownerMemory: OwnerMemory,
 ): TaskExecutor {
   if (!executors.has(nodeId)) {
-    executors.set(nodeId, new TaskExecutor(aiClient, ownerMemory))
+    executors.set(nodeId, new TaskExecutor(aiClient, ownerMemory, { nodeId }))
   }
   return executors.get(nodeId)!
 }

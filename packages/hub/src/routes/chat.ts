@@ -42,14 +42,22 @@ function getRecallTargets(msg: ChatMessage): string[] {
 
 // ─── REST 路由 ────────────────────────────────────────────────────────────────
 
-// 发送消息
+// 发送消息 — SECURITY: sender bound from JWT, body.from is ignored
 router.post('/send', (req: Request, res: Response) => {
   const msg = req.body as ChatMessage
 
-  if (!msg?.id || !msg?.from || !msg?.to || !msg?.content) {
+  if (!msg?.id || !msg?.to || !msg?.content) {
     res.status(400).json({ error: 'Invalid message format' })
     return
   }
+
+  // Bind sender from JWT — never trust body.from
+  const requesterId = getRequesterId(req)
+  if (!requesterId) {
+    res.status(401).json({ error: 'Unauthorized — JWT required' })
+    return
+  }
+  msg.from = requesterId
 
   // Delegate to worker — delivery is async, we return immediately
   chatWorker.handleIncoming(msg)

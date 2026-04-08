@@ -131,9 +131,27 @@ router.get('/status', (_req: Request, res: Response) => {
   })
 })
 
-// ─── POST /blacklist ──────────────────────────────────────────────────────────
+// ─── RBAC helper: require admin/ceo role from JWT ─────────────────────────────
+
+function requireAdmin(req: Request, res: Response): boolean {
+  const payload = (req as any).jwtPayload as { role?: string } | undefined
+  if (!payload) {
+    res.status(401).json({ error: 'Unauthorized — JWT required' })
+    return false
+  }
+  const role = payload.role?.toLowerCase()
+  if (role !== 'admin' && role !== 'ceo' && role !== 'owner') {
+    res.status(403).json({ error: 'Forbidden — admin/ceo role required' })
+    return false
+  }
+  return true
+}
+
+// ─── POST /blacklist (PROTECTED: admin/ceo only) ──────────────────────────────
 
 router.post('/blacklist', (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return
+
   const { hubUrl, reason } = req.body as { hubUrl?: string; reason?: string }
 
   if (!hubUrl || typeof hubUrl !== 'string') {
@@ -143,6 +161,7 @@ router.post('/blacklist', (req: Request, res: Response) => {
   try {
     const mgr = getFederationManager()
     mgr.addToBlacklist(hubUrl, reason ?? 'No reason provided')
+    console.log(`[federation] AUDIT: blacklist ADD ${hubUrl} by ${(req as any).jwtPayload?.nodeId ?? 'unknown'}`)
     return res.json({ status: 'ok', hubUrl: hubUrl.replace(/\/$/, ''), reason: reason ?? '' })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
@@ -150,14 +169,17 @@ router.post('/blacklist', (req: Request, res: Response) => {
   }
 })
 
-// ─── DELETE /blacklist/:hubUrl ────────────────────────────────────────────────
+// ─── DELETE /blacklist/:hubUrl (PROTECTED: admin/ceo only) ────────────────────
 
 router.delete('/blacklist/:hubUrl', (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return
+
   const hubUrl = decodeURIComponent(req.params.hubUrl)
 
   try {
     const mgr = getFederationManager()
     mgr.removeFromBlacklist(hubUrl)
+    console.log(`[federation] AUDIT: blacklist REMOVE ${hubUrl} by ${(req as any).jwtPayload?.nodeId ?? 'unknown'}`)
     return res.json({ status: 'ok', hubUrl })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
@@ -165,9 +187,11 @@ router.delete('/blacklist/:hubUrl', (req: Request, res: Response) => {
   }
 })
 
-// ─── GET /blacklist ───────────────────────────────────────────────────────────
+// ─── GET /blacklist (PROTECTED: admin/ceo only) ──────────────────────────────
 
-router.get('/blacklist', (_req: Request, res: Response) => {
+router.get('/blacklist', (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return
+
   const mgr   = getFederationManager()
   const list  = mgr.listBlacklist()
   return res.json({ blacklist: list, count: list.length })

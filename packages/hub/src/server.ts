@@ -228,19 +228,24 @@ export function createServer(): Application {
   app.post('/api/auth/register', rateLimiter.register)
   app.use('/api/auth', authRoute)
 
-  // Public: ClawChat (nodes authenticate via WebSocket nodeId); message send is rate-limited
-  app.post('/api/chat/send', rateLimiter.message)
-  app.use('/api/chat', chatRouter)
+    // Public: ClawChat — only WebSocket and inbox are public (node auth via WS handshake / nodeId)
+  // SECURITY: /send, /threads, /stats moved below JWT middleware
+  app.use('/api/chat/ws', chatRouter)
+  app.use('/api/chat/inbox', chatRouter)
 
   // Public: Human accounts — humanToken auth (no JWT needed)
   app.use('/api/humans', humansRoute)
 
   // Public: receipt delivery/read status (nodes authenticate via nodeId in body)
   app.use('/api/receipt', receiptRoute)
-  app.use('/api/chat', traceRoute)       // message trace & status
 
-  // Public: inter-hub federation protocol (hub-to-hub, no JWT)
-  app.use('/api/federation', federationRoute)
+  // Public: inter-hub federation — only handshake/message/discover/peers/status are public
+  // SECURITY: blacklist GET/POST/DELETE moved below JWT middleware
+  app.use('/api/federation/handshake', federationRoute)
+  app.use('/api/federation/message', federationRoute)
+  app.use('/api/federation/peers', federationRoute)
+  app.use('/api/federation/discover', federationRoute)
+  app.use('/api/federation/status', federationRoute)
   app.use('/api/agent', agentSessionRoute)
 
   // Public: user profile pages (HTML, no JWT)
@@ -251,6 +256,13 @@ export function createServer(): Application {
 
   // Protected: all other routes require JWT
   app.use('/api/', jwtAuthMiddleware)
+
+  // SECURITY FIX: Chat routes now behind JWT — sender bound from token
+  app.post('/api/chat/send', rateLimiter.message, chatRouter)
+  app.use('/api/chat', chatRouter)
+
+  // SECURITY FIX: Federation blacklist behind JWT + RBAC (admin/ceo only)
+  app.use('/api/federation/blacklist', federationRoute)
 
   // Tenant context: extract tenantId/orgId from JWT or headers for multi-tenant routes
   app.use('/api/tenants', tenantContextMiddleware({ requireTenant: false }), tenantRouter)

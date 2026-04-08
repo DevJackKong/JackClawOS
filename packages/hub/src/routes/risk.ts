@@ -30,28 +30,83 @@ function requireString(value: unknown, fieldName: string): string {
 }
 
 /**
- * Build condition function from string expression.
- * 通过字符串表达式构建 condition 函数。
+ * Build condition function from SAFE declarative rules (no eval/new Function).
+ * 通过安全的声明式规则构建 condition 函数（禁止 eval/new Function）。
  *
- * Example / 示例:
- * - "ctx.action.includes('delete')"
- * - "ctx.actorType === 'agent' && ctx.targetType === 'payment'"
+ * conditionExpr is now a JSON object with field matchers:
+ * {
+ *   "field": "action",          // ctx field to check
+ *   "op": "includes",           // eq | neq | includes | startsWith | gt | lt | in
+ *   "value": "delete"           // value to compare against
+ * }
+ *
+ * Multiple conditions can be combined:
+ * {
+ *   "all": [
+ *     { "field": "actorType", "op": "eq", "value": "agent" },
+ *     { "field": "targetType", "op": "eq", "value": "payment" }
+ *   ]
+ * }
  */
-function buildCondition(conditionExpr: string): RiskRule['condition'] {
-  try {
-    const factory = new Function('ctx', `return (${conditionExpr})`) as (ctx: RiskContext) => boolean
 
-    return (ctx: RiskContext): boolean => {
-      try {
-        return Boolean(factory(ctx))
-      } catch {
-        return false
-      }
-    }
+interface ConditionRule {
+  field?: string
+  op?: 'eq' | 'neq' | 'includes' | 'startsWith' | 'gt' | 'lt' | 'in'
+  value?: unknown
+  all?: ConditionRule[]
+  any?: ConditionRule[]
+}
+
+function evaluateCondition(rule: ConditionRule, ctx: RiskContext): boolean {
+  // Compound: all (AND)
+  if (rule.all) {
+    return rule.all.every(r => evaluateCondition(r, ctx))
+  }
+  // Compound: any (OR)
+  if (rule.any) {
+    return rule.any.some(r => evaluateCondition(r, ctx))
+  }
+
+  if (!rule.field || !rule.op) return false
+
+  // Safe field access — only allow known top-level ctx fields
+  const val = (ctx as Record<string, unknown>)[rule.field]
+
+  switch (rule.op) {
+    case 'eq':         return val === rule.value
+    case 'neq':        return val !== rule.value
+    case 'includes':   return typeof val === 'string' && typeof rule.value === 'string' && val.includes(rule.value)
+    case 'startsWith': return typeof val === 'string' && typeof rule.value === 'string' && val.startsWith(rule.value)
+    case 'gt':         return typeof val === 'number' && typeof rule.value === 'number' && val > rule.value
+    case 'lt':         return typeof val === 'number' && typeof rule.value === 'number' && val < rule.value
+    case 'in':         return Array.isArray(rule.value) && rule.value.includes(val)
+    default:           return false
+  }
+}
+
+function buildCondition(conditionExpr: string): RiskRule['condition'] {
+  let parsed: ConditionRule
+  try {
+    parsed = JSON.parse(conditionExpr) as ConditionRule
   } catch {
-    const error = new Error('Invalid conditionExpr / conditionExpr 非法')
+    const error = new Error('conditionExpr must be valid JSON / conditionExpr 必须是合法 JSON')
     ;(error as Error & { status?: number }).status = 400
     throw error
+  }
+
+  // Validate structure
+  if (!parsed.field && !parsed.all && !parsed.any) {
+    const error = new Error('conditionExpr must have field+op, all, or any / conditionExpr 必须包含 field+op、all 或 any')
+    ;(error as Error & { status?: number }).status = 400
+    throw error
+  }
+
+  return (ctx: RiskContext): boolean => {
+    try {
+      return evaluateCondition(parsed, ctx)
+    } catch {
+      return false
+    }
   }
 }
 

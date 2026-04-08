@@ -68,7 +68,7 @@ function requireAuthorizedAgentHandle(req, res) {
         return requestedHandle;
     }
     if (requestedHandle && requestedHandle !== authedHandle) {
-        res.status(403).json({ error: 'forbidden', message: '不能访问其他 handle 的社交数据' });
+        res.status(403).json({ error: 'forbidden', message: 'Cannot access another handle social data' });
         return null;
     }
     return authedHandle;
@@ -85,7 +85,7 @@ function requireAuthorizedFromAgent(req, res, fromAgent) {
     if (!fromAgent)
         return authedHandle;
     if (fromAgent !== authedHandle) {
-        res.status(403).json({ error: 'forbidden', message: '不能冒用其他 handle 发消息' });
+        res.status(403).json({ error: 'forbidden', message: 'Cannot impersonate another handle' });
         return null;
     }
     return authedHandle;
@@ -216,18 +216,23 @@ router.post('/send', async (req, res) => {
     if (!body.toAgent || !body.content) {
         return res.status(400).json({ error: 'missing_fields', required: ['toAgent', 'content'] });
     }
+    // M2: validate message type whitelist
+    const ALLOWED_MSG_TYPES = ['text', 'business', 'task'];
+    if (body.type && !ALLOWED_MSG_TYPES.includes(body.type)) {
+        return res.status(400).json({ error: 'invalid_message_type', message: `Unsupported type "${body.type}". Allowed: ${ALLOWED_MSG_TYPES.join(', ')}` });
+    }
     const fromHuman = typeof body.fromHuman === 'string' && body.fromHuman.trim().length > 0
         ? body.fromHuman
         : fromAgent.replace(/^@/, '');
     // Resolve target profile using both original and canonical forms
     const targetProfile = profiles[body.toAgent] ?? profiles[(0, protocol_1.normalizeAgentAddress)(body.toAgent)];
     if (targetProfile?.contactPolicy === 'closed') {
-        return res.status(403).json({ error: 'contact_policy_closed', message: `${body.toAgent} 不接受外来消息` });
+        return res.status(403).json({ error: 'contact_policy_closed', message: `${body.toAgent} does not accept external messages` });
     }
     if (targetProfile?.contactPolicy === 'request') {
         const myContacts = contacts[fromAgent] ?? [];
         if (!myContacts.includes(body.toAgent)) {
-            return res.status(403).json({ error: 'contact_required', message: `需先发送联系请求并被接受` });
+            return res.status(403).json({ error: 'contact_required', message: `Contact request required — send a contact request first` });
         }
     }
     const msgUserId = fromAgent;
@@ -235,7 +240,7 @@ router.post('/send', async (req, res) => {
     if (!msgQuota.allowed) {
         return res.status(429).json({
             error: 'quota_exceeded',
-            message: `每日消息上限已达到 (${msgQuota.limit} 条/天)，剩余: 0`,
+            message: `Daily message quota exceeded (${msgQuota.limit}/day), remaining: 0`,
             remaining: 0,
         });
     }
@@ -300,14 +305,14 @@ router.post('/contact', (req, res) => {
     const myContacts = contacts[fromAgent] ?? contacts[(0, protocol_1.normalizeAgentAddress)(fromAgent)] ?? [];
     const toKey = body.toAgent;
     if (myContacts.includes(toKey) || myContacts.includes((0, protocol_1.normalizeAgentAddress)(toKey))) {
-        return res.status(409).json({ error: 'already_contacts', message: '你们已经是联系人' });
+        return res.status(409).json({ error: 'already_contacts', message: 'Already contacts' });
     }
     const req2 = {
         id: crypto_1.default.randomUUID(),
         fromAgent,
         toAgent: body.toAgent,
         message: body.message,
-        purpose: body.purpose ?? '建立联系',
+        purpose: body.purpose ?? 'Establish contact',
         status: 'pending',
         ts: Date.now(),
     };

@@ -51,11 +51,29 @@ router.post('/message', (req, res) => {
     if (!federatedMessage?.id || !federatedMessage.fromHub || !federatedMessage.message) {
         return res.status(400).json({ error: 'invalid_federated_message' });
     }
+    // M2: validate message type whitelist
+    const ALLOWED_MSG_TYPES = ['text', 'business', 'task'];
+    const msgType = federatedMessage.message?.type;
+    if (msgType && !ALLOWED_MSG_TYPES.includes(msgType)) {
+        return res.status(400).json({ error: 'invalid_message_type', message: `Unsupported type "${msgType}". Allowed: ${ALLOWED_MSG_TYPES.join(', ')}` });
+    }
     try {
         const mgr = (0, federation_1.getFederationManager)();
         const socialMsg = mgr.receiveFromRemoteHub(federatedMessage);
-        // Deliver locally using the social module's deliver function
-        // We import it lazily to avoid circular deps
+        // SECURITY: validate toAgent exists locally before marking as delivered
+        const toAgent = socialMsg.toAgent;
+        if (toAgent) {
+            const { directoryStore } = require('../store/directory');
+            const { parseHandle } = require('@jackclaw/protocol');
+            const parsed = parseHandle(toAgent);
+            const profile = parsed
+                ? (directoryStore.getProfile(parsed.full) ?? directoryStore.getProfile(`@${parsed.local}`))
+                : null;
+            if (!profile) {
+                return res.status(404).json({ error: 'agent_not_found', message: `Target agent ${toAgent} not found on this hub` });
+            }
+        }
+        // Deliver locally
         // eslint-disable-next-line @typescript-eslint/no-var-requires
         const { deliverFederatedMessage } = require('../routes/social');
         deliverFederatedMessage(socialMsg);

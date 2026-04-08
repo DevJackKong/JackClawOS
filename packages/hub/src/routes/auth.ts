@@ -131,7 +131,7 @@ router.post('/register', asyncRoute(async (req, res) => {
 
   if (password) {
     if (!handle || !displayName) {
-      res.status(400).json({ error: '缺少必填字段：handle、password、displayName' })
+      res.status(400).json({ error: 'Missing required fields: handle, password, displayName' })
       return
     }
 
@@ -139,17 +139,17 @@ router.post('/register', asyncRoute(async (req, res) => {
 
     if (config.requireInvite) {
       if (!inviteCode || typeof inviteCode !== 'string') {
-        res.status(403).json({ error: 'invite_required', message: '此 Hub 需要邀请码才能注册' })
+        res.status(403).json({ error: 'invite_required', message: 'Invite code required for registration' })
         return
       }
       const invites = loadInvites()
       const record  = invites[String(inviteCode).toUpperCase()]
       if (!record) {
-        res.status(403).json({ error: 'invalid_invite', message: '邀请码无效' })
+        res.status(403).json({ error: 'invalid_invite', message: 'Invalid invite code' })
         return
       }
       if (record.usedBy) {
-        res.status(403).json({ error: 'invite_used', message: '邀请码已被使用' })
+        res.status(403).json({ error: 'invite_used', message: 'Invite code already used' })
         return
       }
     }
@@ -194,18 +194,18 @@ router.post('/register', asyncRoute(async (req, res) => {
   }
 
   if (!handle || typeof handle !== 'string') {
-    res.status(400).json({ error: '缺少必填字段：handle' })
+    res.status(400).json({ error: 'Missing required field: handle' })
     return
   }
 
   const normalizedHandle = String(handle).trim().toLowerCase()
   if (!isPublicRegisterHandle(normalizedHandle)) {
-    res.status(400).json({ error: 'handle 必须是 3-50 字符的 @xxx.yyy 格式' })
+    res.status(400).json({ error: 'Handle must be 3-50 chars in @xxx.yyy format' })
     return
   }
 
   if (directoryStore.getProfile(normalizedHandle)) {
-    res.status(409).json({ error: 'handle_exists', message: `${normalizedHandle} 已存在` })
+    res.status(409).json({ error: 'handle_exists', message: `${normalizedHandle} already taken` })
     return
   }
 
@@ -246,7 +246,7 @@ router.post('/register', asyncRoute(async (req, res) => {
 router.post('/login', asyncRoute(async (req, res) => {
   const { handle, password } = req.body ?? {}
   if (!handle || !password) {
-    res.status(400).json({ error: '请输入 handle 和密码' })
+    res.status(400).json({ error: 'Missing required fields: handle, password' })
     return
   }
   const result = await userStore.login(String(handle), String(password))
@@ -257,12 +257,12 @@ router.post('/login', asyncRoute(async (req, res) => {
 router.post('/check-handle', (req: Request, res: Response) => {
   const { handle } = req.body ?? {}
   if (!handle) {
-    res.status(400).json({ error: '缺少 handle 字段' })
+    res.status(400).json({ error: 'Missing required field: handle' })
     return
   }
   const normalized = userStore.normalizeHandle(String(handle))
   if (normalized.length < 3) {
-    res.json({ available: false, reason: 'handle 至少 3 个字符' })
+    res.json({ available: false, reason: 'Handle must be at least 3 characters' })
     return
   }
   res.json({ available: userStore.isHandleAvailable(normalized), handle: normalized })
@@ -273,7 +273,7 @@ router.post('/check-handle', (req: Request, res: Response) => {
 // GET /api/auth/me
 router.get('/me', (req: Request, res: Response) => {
   const handle = authedHandle(req)
-  if (!handle) { res.status(401).json({ error: '未登录或 token 无效' }); return }
+  if (!handle) { res.status(401).json({ error: 'Unauthorized — invalid or missing token' }); return }
   const user = userStore.getUser(handle)
   if (!user) { res.status(404).json({ error: '用户不存在' }); return }
   res.json(user)
@@ -282,7 +282,7 @@ router.get('/me', (req: Request, res: Response) => {
 // PATCH /api/auth/profile
 router.patch('/profile', (req: Request, res: Response) => {
   const handle = authedHandle(req)
-  if (!handle) { res.status(401).json({ error: '未登录或 token 无效' }); return }
+  if (!handle) { res.status(401).json({ error: 'Unauthorized — invalid or missing token' }); return }
   try {
     const { displayName, bio, avatar, email } = req.body ?? {}
     const updated = userStore.updateProfile(handle, { displayName, bio, avatar, email })
@@ -296,10 +296,10 @@ router.patch('/profile', (req: Request, res: Response) => {
 // POST /api/auth/change-password
 router.post('/change-password', asyncRoute(async (req, res) => {
   const handle = authedHandle(req)
-  if (!handle) { res.status(401).json({ error: '未登录或 token 无效' }); return }
+  if (!handle) { res.status(401).json({ error: 'Unauthorized — invalid or missing token' }); return }
   const { oldPassword, newPassword } = req.body ?? {}
   if (!oldPassword || !newPassword) {
-    res.status(400).json({ error: '缺少 oldPassword 或 newPassword' })
+    res.status(400).json({ error: 'Missing required fields: oldPassword, newPassword' })
     return
   }
   await userStore.changePassword(handle, String(oldPassword), String(newPassword))
@@ -309,7 +309,7 @@ router.post('/change-password', asyncRoute(async (req, res) => {
 // GET /api/auth/users  (简单分页列表 — admin only)
 router.get('/users', (req: Request, res: Response) => {
   const handle = authedHandle(req)
-  if (!handle) { res.status(401).json({ error: '未登录或 token 无效' }); return }
+  if (!handle) { res.status(401).json({ error: 'Unauthorized — invalid or missing token' }); return }
   const config = getHubConfig()
   if (config.admins.length > 0 && !config.admins.includes(handle)) {
     res.status(403).json({ error: 'admin_only' }); return
@@ -322,12 +322,12 @@ router.get('/users', (req: Request, res: Response) => {
 // POST /api/auth/invite — 生成邀请码 (CEO/admin only)
 router.post('/invite', asyncRoute(async (req, res) => {
   const handle = authedHandle(req)
-  if (!handle) { res.status(401).json({ error: '未登录或 token 无效' }); return }
+  if (!handle) { res.status(401).json({ error: 'Unauthorized — invalid or missing token' }); return }
 
   const config = getHubConfig()
   // Must be listed in admins array (or admins list is empty → any user can generate, for dev mode)
   if (config.admins.length > 0 && !config.admins.includes(handle)) {
-    res.status(403).json({ error: 'admin_only', message: '只有管理员可以生成邀请码' })
+    res.status(403).json({ error: 'admin_only', message: 'Only admins can generate invite codes' })
     return
   }
 

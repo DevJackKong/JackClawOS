@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express'
 import { riskEngine, type RiskContext, type RiskLevel, type RiskRule } from '../services/risk-engine'
 import { asyncHandler } from '../server'
+import { requireAdmin } from './rbac-helpers'
 
 const router = Router()
 
@@ -145,6 +146,8 @@ router.get('/rules', asyncHandler(async (_req: Request, res: Response): Promise<
  * 添加一条自定义风控规则。
  */
 router.post('/rules', asyncHandler(async (req: Request, res: Response): Promise<void> => {
+  // SECURITY: only admin can create risk rules
+  if (!requireAdmin(req, res)) return
   const body = (req.body ?? {}) as Partial<CreateRiskRuleBody>
 
   const id = requireString(body.id, 'id')
@@ -183,6 +186,10 @@ router.post('/rules', asyncHandler(async (req: Request, res: Response): Promise<
  * 按 id 删除一条规则。
  */
 router.delete('/rules/:id', asyncHandler(async (req: Request, res: Response): Promise<void> => {
+  // SECURITY: only admin can delete risk rules
+  if (!requireAdmin(req, res)) return
+  // SECURITY: only admin can delete risk rules
+  if (!requireAdmin(req, res)) return
   const id = requireString(req.params.id, 'id')
   riskEngine.removeRule(id)
 

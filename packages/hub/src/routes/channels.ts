@@ -1,32 +1,36 @@
 /**
  * routes/channels.ts — Hub channel management routes
  *
- * Aggregates IM channel status and stats across all registered nodes,
- * and proxies channel configuration requests to individual nodes.
+ * SECURITY: all routes require admin role.
+ * callbackUrl is never exposed in responses.
  */
 
 import { Router, Request, Response } from 'express'
 import axios from 'axios'
 import { getAllNodes } from '../store/nodes'
+import { requireAdmin, getRequester } from './rbac-helpers'
 
 const router = Router()
 
 // ─── GET /api/channels ────────────────────────────────────────────────────────
-// Aggregate channel lists from all registered nodes.
+// Admin only. Aggregate channel lists from all registered nodes.
+// SECURITY: callbackUrl stripped from response.
 
 router.get('/', (req: Request, res: Response): void => {
+  if (!requireAdmin(req, res)) return
+
   void (async () => {
     const nodes = getAllNodes()
 
     const results = await Promise.all(nodes.map(async (node) => {
       if (!node.callbackUrl) {
-        return { nodeId: node.nodeId, name: node.name, callbackUrl: null, channels: [], error: 'no callbackUrl' }
+        return { nodeId: node.nodeId, name: node.name, channels: [], error: 'no callbackUrl' }
       }
       try {
         const r = await axios.get<{ channels: unknown[] }>(`${node.callbackUrl}/api/channels`, { timeout: 3000 })
-        return { nodeId: node.nodeId, name: node.name, callbackUrl: node.callbackUrl, channels: r.data?.channels ?? [] }
+        return { nodeId: node.nodeId, name: node.name, channels: r.data?.channels ?? [] }
       } catch {
-        return { nodeId: node.nodeId, name: node.name, callbackUrl: node.callbackUrl, channels: [], error: 'unreachable' }
+        return { nodeId: node.nodeId, name: node.name, channels: [], error: 'unreachable' }
       }
     }))
 
@@ -35,9 +39,11 @@ router.get('/', (req: Request, res: Response): void => {
 })
 
 // ─── POST /api/channels/configure ────────────────────────────────────────────
-// Forward channel configuration to a specific node.
+// Admin only. Forward channel configuration to a specific node.
 
 router.post('/configure', (req: Request, res: Response): void => {
+  if (!requireAdmin(req, res)) return
+
   void (async () => {
     const { nodeId, channel, config } = req.body as {
       nodeId?: string
@@ -77,9 +83,12 @@ router.post('/configure', (req: Request, res: Response): void => {
 })
 
 // ─── GET /api/channels/stats ──────────────────────────────────────────────────
-// Aggregate per-channel stats (messages sent/received, uptime) from all nodes.
+// Admin only. Aggregate per-channel stats from all nodes.
+// SECURITY: callbackUrl stripped from response.
 
 router.get('/stats', (req: Request, res: Response): void => {
+  if (!requireAdmin(req, res)) return
+
   void (async () => {
     const nodes = getAllNodes()
 

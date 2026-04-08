@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const risk_engine_1 = require("../services/risk-engine");
 const server_1 = require("../server");
+const rbac_helpers_1 = require("./rbac-helpers");
 const router = (0, express_1.Router)();
 /**
  * Ensure required string field exists.
@@ -96,6 +97,9 @@ router.get('/rules', (0, server_1.asyncHandler)(async (_req, res) => {
  * 添加一条自定义风控规则。
  */
 router.post('/rules', (0, server_1.asyncHandler)(async (req, res) => {
+    // SECURITY: only admin can create risk rules
+    if (!(0, rbac_helpers_1.requireAdmin)(req, res))
+        return;
     const body = (req.body ?? {});
     const id = requireString(body.id, 'id');
     const name = requireString(body.name, 'name');
@@ -129,6 +133,12 @@ router.post('/rules', (0, server_1.asyncHandler)(async (req, res) => {
  * 按 id 删除一条规则。
  */
 router.delete('/rules/:id', (0, server_1.asyncHandler)(async (req, res) => {
+    // SECURITY: only admin can delete risk rules
+    if (!(0, rbac_helpers_1.requireAdmin)(req, res))
+        return;
+    // SECURITY: only admin can delete risk rules
+    if (!(0, rbac_helpers_1.requireAdmin)(req, res))
+        return;
     const id = requireString(req.params.id, 'id');
     risk_engine_1.riskEngine.removeRule(id);
     res.json({ success: true, id });

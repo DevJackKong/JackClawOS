@@ -16,23 +16,32 @@ const path_1 = __importDefault(require("path"));
 const message_store_1 = require("../store/message-store");
 const presence_1 = require("../presence");
 const directory_1 = require("../store/directory");
+const rbac_helpers_1 = require("./rbac-helpers");
 const router = (0, express_1.Router)();
 const HUB_DIR = path_1.default.join(os_1.default.homedir(), '.jackclaw', 'hub');
 // ─── GET /messages ────────────────────────────────────────────────────────────
 router.get('/messages', (req, res) => {
+    const requester = (0, rbac_helpers_1.getRequester)(req);
+    if (!requester)
+        return res.status(401).json({ error: 'Unauthorized' });
     const { q, from, to, after, before, limit: limitStr, offset: offsetStr, } = req.query;
     if (!q?.trim()) {
         return res.status(400).json({ error: 'q (query) required' });
     }
+    // SECURITY: non-admin can only search messages where they are sender or recipient
+    const scopedFrom = (0, rbac_helpers_1.isAdmin)(req) ? (from || undefined) : requester;
+    const scopedTo = (0, rbac_helpers_1.isAdmin)(req) ? (to || undefined) : requester;
     const results = message_store_1.messageStore.searchMessages(q, {
-        from: from || undefined,
-        to: to || undefined,
+        from: scopedFrom,
+        to: scopedTo,
         after: after ? parseInt(after, 10) : undefined,
         before: before ? parseInt(before, 10) : undefined,
         limit: limitStr ? Math.min(parseInt(limitStr, 10), 100) : 20,
         offset: offsetStr ? parseInt(offsetStr, 10) : 0,
     });
-    return res.json({ results, count: results.length });
+    // For non-admin, filter results to only messages involving the requester
+    const filtered = (0, rbac_helpers_1.isAdmin)(req) ? results : results.filter((m) => m.from === requester || m.to === requester);
+    return res.json({ results: filtered, count: filtered.length });
 });
 // ─── GET /contacts ────────────────────────────────────────────────────────────
 router.get('/contacts', (req, res) => {

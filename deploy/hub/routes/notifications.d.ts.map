@@ -1,1 +1,1 @@
-{"version":3,"file":"notifications.d.ts","sourceRoot":"","sources":["../../src/routes/notifications.ts"],"names":[],"mappings":"AAAA;;;;;;;;GAQG;AAMH,QAAA,MAAM,MAAM,4CAAW,CAAA;AAsIvB,eAAe,MAAM,CAAA"}
+{"version":3,"file":"notifications.d.ts","sourceRoot":"","sources":["../../src/routes/notifications.ts"],"names":[],"mappings":"AAAA;;;;;;;;GAQG;AAOH,QAAA,MAAM,MAAM,4CAAW,CAAA;AA8FvB,eAAe,MAAM,CAAA"}

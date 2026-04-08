@@ -62,9 +62,9 @@ router.post('/', (req, res) => {
         res.status(400).json({ error: 'content is required' });
         return;
     }
-    // Use nodeId from body, fallback to JWT payload
+    // SECURITY: bind nodeId from JWT, never trust body.nodeId
     const payload = req.jwtPayload;
-    const resolvedNodeId = nodeId || payload?.nodeId || 'unknown';
+    const resolvedNodeId = payload?.nodeId || 'unknown';
     const entry = store.add({
         type,
         content: content.trim(),

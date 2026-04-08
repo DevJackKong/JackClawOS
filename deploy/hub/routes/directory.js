@@ -22,6 +22,7 @@ const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
 const protocol_1 = require("@jackclaw/protocol");
 const directory_1 = require("../store/directory");
+const rbac_helpers_1 = require("./rbac-helpers");
 const router = (0, express_1.Router)();
 // ─── Storage (collaborations + trust remain file-backed here) ─────────────────
 const HUB_DIR = path_1.default.join(process.env.HOME || '~', '.jackclaw', 'hub');
@@ -57,9 +58,13 @@ function shouldAutoAccept(fromHandle, toHandle) {
 // ─── Directory Routes ─────────────────────────────────────────────────────────
 // POST /api/directory/register
 router.post('/register', (req, res) => {
+    // SECURITY: nodeId must come from JWT, not body
+    const jwtNodeId = (0, rbac_helpers_1.getRequester)(req);
+    if (!jwtNodeId)
+        return res.status(401).json({ error: 'Unauthorized' });
     const body = req.body;
-    if (!body.handle || !body.nodeId || !body.publicKey) {
-        return res.status(400).json({ error: 'missing_fields', required: ['handle', 'nodeId', 'publicKey'] });
+    if (!body.handle || !body.publicKey) {
+        return res.status(400).json({ error: 'missing_fields', required: ['handle', 'publicKey'] });
     }
     const parsed = (0, protocol_1.parseHandle)(body.handle);
     if (!parsed) {
@@ -67,11 +72,11 @@ router.post('/register', (req, res) => {
     }
     // Uniqueness check: block if a different node already owns this handle
     const existing = directory_1.directoryStore.getProfile(parsed.full);
-    if (existing && existing.nodeId !== body.nodeId) {
+    if (existing && existing.nodeId !== jwtNodeId) {
         return res.status(409).json({ error: 'handle_taken', handle: parsed.full });
     }
     const profile = {
-        nodeId: body.nodeId,
+        nodeId: jwtNodeId, // SECURITY: always from JWT
         handle: parsed.full,
         displayName: body.displayName ?? parsed.local,
         role: body.role ?? 'member',
@@ -82,9 +87,8 @@ router.post('/register', (req, res) => {
         createdAt: existing?.createdAt ?? Date.now(),
         lastSeen: Date.now(),
     };
-    // Register via store — single source of truth for handle→nodeId mapping
     directory_1.directoryStore.registerHandle(parsed.full, profile);
-    console.log(`[directory] Registered: ${parsed.full} (nodeId: ${body.nodeId})`);
+    console.log(`[directory] Registered: ${parsed.full} (nodeId: ${jwtNodeId})`);
     return res.status(201).json({ handle: parsed.full, profile });
 });
 // GET /api/directory/lookup/:handle
@@ -109,16 +113,24 @@ router.get('/list', (_req, res) => {
     return res.json({ agents: visible, count: visible.length });
 });
 // ─── Collaboration Routes ─────────────────────────────────────────────────────
-// POST /api/collab/invite
+// POST /api/collab/invite — SECURITY: bind fromHandle to JWT identity
 router.post('/collab/invite', (req, res) => {
+    const jwtNodeId = (0, rbac_helpers_1.getRequester)(req);
+    if (!jwtNodeId)
+        return res.status(401).json({ error: 'Unauthorized' });
     const body = req.body;
     if (!body.fromHandle || !body.toHandle || !body.topic) {
         return res.status(400).json({ error: 'missing_fields', required: ['fromHandle', 'toHandle', 'topic'] });
     }
     const fromParsed = (0, protocol_1.parseHandle)(body.fromHandle);
-    const targets = body.toHandle.split(',').map(h => h.trim());
     if (!fromParsed)
         return res.status(400).json({ error: 'invalid_from_handle' });
+    // SECURITY: verify the fromHandle belongs to the JWT identity
+    const fromProfile = directory_1.directoryStore.getProfile(fromParsed.full);
+    if (!fromProfile || fromProfile.nodeId !== jwtNodeId) {
+        return res.status(403).json({ error: 'Forbidden — fromHandle does not belong to you' });
+    }
+    const targets = body.toHandle.split(',').map(h => h.trim());
     const missing = targets.filter(t => {
         const p = (0, protocol_1.parseHandle)(t);
         return !p || !directory_1.directoryStore.getProfile(p.full);
@@ -169,8 +181,11 @@ router.post('/collab/invite', (req, res) => {
         session,
     });
 });
-// POST /api/collab/respond
+// POST /api/collab/respond — SECURITY: verify fromHandle belongs to JWT identity
 router.post('/collab/respond', (req, res) => {
+    const jwtNodeId = (0, rbac_helpers_1.getRequester)(req);
+    if (!jwtNodeId)
+        return res.status(401).json({ error: 'Unauthorized' });
     const body = req.body;
     if (!body.inviteId || !body.fromHandle || !body.decision) {
         return res.status(400).json({ error: 'missing_fields' });
@@ -181,6 +196,15 @@ router.post('/collab/respond', (req, res) => {
     const fromParsed = (0, protocol_1.parseHandle)(body.fromHandle);
     if (!fromParsed)
         return res.status(400).json({ error: 'invalid_handle' });
+    // SECURITY: verify the responder owns the fromHandle
+    const fromProfile = directory_1.directoryStore.getProfile(fromParsed.full);
+    if (!fromProfile || fromProfile.nodeId !== jwtNodeId) {
+        return res.status(403).json({ error: 'Forbidden — fromHandle does not belong to you' });
+    }
+    // SECURITY: verify the responder is a participant
+    if (!session.participants.includes(fromParsed.full)) {
+        return res.status(403).json({ error: 'Forbidden — you are not a participant of this session' });
+    }
     if (body.decision === 'accept') {
         session.status = 'accepted';
         session.startedAt = Date.now();

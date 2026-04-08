@@ -11,118 +11,66 @@
 import { Router, Request, Response } from 'express'
 import { notificationStore } from '../store/notification-store'
 import { asyncHandler } from '../server'
+import { getRequester } from './rbac-helpers'
 
 const router = Router()
 
-/**
- * Parse unreadOnly query into boolean.
- * 将 unreadOnly 查询参数解析为布尔值。
- */
 function parseUnreadOnly(value: unknown): boolean {
   if (typeof value === 'boolean') return value
   if (typeof value !== 'string') return false
-
   return ['1', 'true', 'yes', 'on'].includes(value.toLowerCase())
 }
 
-/**
- * Parse limit query into positive integer.
- * 将 limit 查询参数解析为正整数。
- */
 function parseLimit(value: unknown): number | undefined {
   if (typeof value !== 'string') return undefined
-
   const parsed = Number(value)
   if (!Number.isFinite(parsed) || parsed <= 0) return undefined
-
   return Math.floor(parsed)
 }
 
 /**
- * GET /
- * List notifications of one user.
- * 列出指定用户的通知。
- *
- * Query:
- * - userId: string
- * - unreadOnly?: boolean
- * - limit?: number
+ * GET / — SECURITY: userId bound from JWT, ignore query.userId
  */
 router.get('/', asyncHandler(async (req: Request, res: Response): Promise<void> => {
-  const userId = typeof req.query.userId === 'string' ? req.query.userId.trim() : ''
+  const userId = getRequester(req)
+  if (!userId) { res.status(401).json({ error: 'Unauthorized' }); return }
+
   const unreadOnly = parseUnreadOnly(req.query.unreadOnly)
   const limit = parseLimit(req.query.limit)
-
-  if (!userId) {
-    res.status(400).json({ error: 'userId is required' })
-    return
-  }
-
   const notifications = notificationStore.listByUser(userId, { unreadOnly, limit })
 
-  res.json({
-    userId,
-    unreadOnly,
-    limit,
-    notifications,
-    count: notifications.length,
-  })
+  res.json({ userId, unreadOnly, limit, notifications, count: notifications.length })
 }))
 
 /**
- * GET /unread-count
- * Get unread notification count of one user.
- * 获取指定用户的未读通知数量。
- *
- * Must be declared before /:id.
- * 必须定义在 /:id 前面。
- *
- * Query:
- * - userId: string
+ * GET /unread-count — SECURITY: userId from JWT
  */
 router.get('/unread-count', asyncHandler(async (req: Request, res: Response): Promise<void> => {
-  const userId = typeof req.query.userId === 'string' ? req.query.userId.trim() : ''
-
-  if (!userId) {
-    res.status(400).json({ error: 'userId is required' })
-    return
-  }
+  const userId = getRequester(req)
+  if (!userId) { res.status(401).json({ error: 'Unauthorized' }); return }
 
   const unreadCount = notificationStore.unreadCount(userId)
-
   res.json({ userId, unreadCount })
 }))
 
 /**
- * POST /read-all
- * Mark all notifications as read for one user.
- * 将指定用户的全部通知标记为已读。
- *
- * Must be declared before /:id.
- * 必须定义在 /:id 前面。
- *
- * Body:
- * - userId: string
+ * POST /read-all — SECURITY: userId from JWT
  */
 router.post('/read-all', asyncHandler(async (req: Request, res: Response): Promise<void> => {
-  const userId = typeof req.body?.userId === 'string' ? req.body.userId.trim() : ''
-
-  if (!userId) {
-    res.status(400).json({ error: 'userId is required' })
-    return
-  }
+  const userId = getRequester(req)
+  if (!userId) { res.status(401).json({ error: 'Unauthorized' }); return }
 
   const updatedCount = notificationStore.markAllRead(userId)
-
   res.json({ userId, updatedCount })
 }))
 
 /**
- * GET /:id
- * Get one notification by id.
- * 按 id 获取单条通知。
+ * GET /:id — SECURITY: verify notification belongs to requester
  */
 router.get('/:id', asyncHandler(async (req: Request, res: Response): Promise<void> => {
+  const userId = getRequester(req)
+  if (!userId) { res.status(401).json({ error: 'Unauthorized' }); return }
+
   const id = req.params.id.trim()
   const notification = notificationStore.get(id)
 
@@ -131,19 +79,32 @@ router.get('/:id', asyncHandler(async (req: Request, res: Response): Promise<voi
     return
   }
 
+  // SECURITY: only the owner can view their notification
+  if ((notification as any).userId && (notification as any).userId !== userId) {
+    res.status(403).json({ error: 'Forbidden — not your notification' })
+    return
+  }
+
   res.json(notification)
 }))
 
 /**
- * POST /:id/read
- * Mark one notification as read.
- * 将单条通知标记为已读。
+ * POST /:id/read — SECURITY: verify notification belongs to requester
  */
 router.post('/:id/read', asyncHandler(async (req: Request, res: Response): Promise<void> => {
-  const id = req.params.id.trim()
-  const notification = notificationStore.markRead(id)
+  const userId = getRequester(req)
+  if (!userId) { res.status(401).json({ error: 'Unauthorized' }); return }
 
-  res.json(notification)
+  const id = req.params.id.trim()
+  const notification = notificationStore.get(id)
+
+  if (notification && (notification as any).userId && (notification as any).userId !== userId) {
+    res.status(403).json({ error: 'Forbidden — not your notification' })
+    return
+  }
+
+  const result = notificationStore.markRead(id)
+  res.json(result)
 }))
 
 export default router

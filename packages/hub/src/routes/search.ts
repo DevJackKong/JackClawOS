@@ -12,6 +12,7 @@ import path from 'path'
 import { messageStore } from '../store/message-store'
 import { presenceManager } from '../presence'
 import { directoryStore } from '../store/directory'
+import { requireAuth, getRequester, isAdmin } from './rbac-helpers'
 import type { SocialProfile } from '@jackclaw/protocol'
 
 const router = Router()
@@ -20,6 +21,9 @@ const HUB_DIR = path.join(os.homedir(), '.jackclaw', 'hub')
 // ─── GET /messages ────────────────────────────────────────────────────────────
 
 router.get('/messages', (req: Request, res: Response) => {
+  const requester = getRequester(req)
+  if (!requester) return res.status(401).json({ error: 'Unauthorized' })
+
   const {
     q,
     from,
@@ -34,16 +38,25 @@ router.get('/messages', (req: Request, res: Response) => {
     return res.status(400).json({ error: 'q (query) required' })
   }
 
+  // SECURITY: non-admin can only search messages where they are sender or recipient
+  const scopedFrom = isAdmin(req) ? (from || undefined) : requester
+  const scopedTo   = isAdmin(req) ? (to   || undefined) : requester
+
   const results = messageStore.searchMessages(q, {
-    from:   from   || undefined,
-    to:     to     || undefined,
+    from:   scopedFrom,
+    to:     scopedTo,
     after:  after  ? parseInt(after,  10) : undefined,
     before: before ? parseInt(before, 10) : undefined,
     limit:  limitStr  ? Math.min(parseInt(limitStr,  10), 100) : 20,
     offset: offsetStr ? parseInt(offsetStr, 10) : 0,
   })
 
-  return res.json({ results, count: results.length })
+  // For non-admin, filter results to only messages involving the requester
+  const filtered = isAdmin(req) ? results : results.filter((m: any) =>
+    m.from === requester || m.to === requester
+  )
+
+  return res.json({ results: filtered, count: filtered.length })
 })
 
 // ─── GET /contacts ────────────────────────────────────────────────────────────

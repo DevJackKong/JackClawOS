@@ -8,6 +8,7 @@
 import { Router, Request, Response } from 'express'
 import { OrgMemoryStore, OrgMemoryType } from '../store/org-memory'
 import type { JWTPayload } from '../types'
+import { getRequester, isAdmin } from './rbac-helpers'
 
 const store = new OrgMemoryStore()
 const router = Router()
@@ -74,9 +75,9 @@ router.post('/', (req: Request, res: Response): void => {
     return
   }
 
-  // Use nodeId from body, fallback to JWT payload
+  // SECURITY: bind nodeId from JWT, never trust body.nodeId
   const payload = (req as Request & { jwtPayload?: JWTPayload }).jwtPayload
-  const resolvedNodeId = nodeId || payload?.nodeId || 'unknown'
+  const resolvedNodeId = payload?.nodeId || 'unknown'
 
   const entry = store.add({
     type,

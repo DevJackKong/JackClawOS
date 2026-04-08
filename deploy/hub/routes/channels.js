@@ -2,8 +2,8 @@
 /**
  * routes/channels.ts — Hub channel management routes
  *
- * Aggregates IM channel status and stats across all registered nodes,
- * and proxies channel configuration requests to individual nodes.
+ * SECURITY: all routes require admin role.
+ * callbackUrl is never exposed in responses.
  */
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
@@ -12,30 +12,36 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const axios_1 = __importDefault(require("axios"));
 const nodes_1 = require("../store/nodes");
+const rbac_helpers_1 = require("./rbac-helpers");
 const router = (0, express_1.Router)();
 // ─── GET /api/channels ────────────────────────────────────────────────────────
-// Aggregate channel lists from all registered nodes.
+// Admin only. Aggregate channel lists from all registered nodes.
+// SECURITY: callbackUrl stripped from response.
 router.get('/', (req, res) => {
+    if (!(0, rbac_helpers_1.requireAdmin)(req, res))
+        return;
     void (async () => {
         const nodes = (0, nodes_1.getAllNodes)();
         const results = await Promise.all(nodes.map(async (node) => {
             if (!node.callbackUrl) {
-                return { nodeId: node.nodeId, name: node.name, callbackUrl: null, channels: [], error: 'no callbackUrl' };
+                return { nodeId: node.nodeId, name: node.name, channels: [], error: 'no callbackUrl' };
             }
             try {
                 const r = await axios_1.default.get(`${node.callbackUrl}/api/channels`, { timeout: 3000 });
-                return { nodeId: node.nodeId, name: node.name, callbackUrl: node.callbackUrl, channels: r.data?.channels ?? [] };
+                return { nodeId: node.nodeId, name: node.name, channels: r.data?.channels ?? [] };
             }
             catch {
-                return { nodeId: node.nodeId, name: node.name, callbackUrl: node.callbackUrl, channels: [], error: 'unreachable' };
+                return { nodeId: node.nodeId, name: node.name, channels: [], error: 'unreachable' };
             }
         }));
         res.json({ nodes: results });
     })();
 });
 // ─── POST /api/channels/configure ────────────────────────────────────────────
-// Forward channel configuration to a specific node.
+// Admin only. Forward channel configuration to a specific node.
 router.post('/configure', (req, res) => {
+    if (!(0, rbac_helpers_1.requireAdmin)(req, res))
+        return;
     void (async () => {
         const { nodeId, channel, config } = req.body;
         if (!nodeId || !channel || !config) {
@@ -64,8 +70,11 @@ router.post('/configure', (req, res) => {
     })();
 });
 // ─── GET /api/channels/stats ──────────────────────────────────────────────────
-// Aggregate per-channel stats (messages sent/received, uptime) from all nodes.
+// Admin only. Aggregate per-channel stats from all nodes.
+// SECURITY: callbackUrl stripped from response.
 router.get('/stats', (req, res) => {
+    if (!(0, rbac_helpers_1.requireAdmin)(req, res))
+        return;
     void (async () => {
         const nodes = (0, nodes_1.getAllNodes)();
         const results = await Promise.all(nodes.map(async (node) => {

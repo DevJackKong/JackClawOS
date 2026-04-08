@@ -39,19 +39,32 @@ const DEFAULT_CONFIG = {
   },
   wechat: {
     enabled: false,
-    webhookUrl: '',  // 企业微信群机器人 webhook URL
-    // 或者用公众号/小程序推送:
+    // 方式1: 企业微信群机器人 webhook
+    webhookUrl: '',
+    // 方式2: 微信公众号模板消息
     appId: '',
     appSecret: '',
     templateId: '',
     openId: '',
+    // 方式3: Server酱 (serverchan.com) — 最简单
+    serverChanKey: '',  // SCT开头的 SendKey
+    // 方式4: 微信小程序订阅消息
+    miniAppId: '',
+    miniAppSecret: '',
+    miniTemplateId: '',
+    miniOpenId: '',
   },
   whatsapp: {
     enabled: false,
-    // Meta Cloud API
+    // 方式1: Meta Cloud API (官方)
     phoneNumberId: '',
     accessToken: '',
     recipientPhone: '',  // 接收者手机号 (带国家代码，如 +8613800138000)
+    // 方式2: Twilio WhatsApp API
+    twilioAccountSid: '',
+    twilioAuthToken: '',
+    twilioFromNumber: '',  // whatsapp:+14155238886
+    twilioToNumber: '',    // whatsapp:+8613800138000
   },
 };
 
@@ -238,14 +251,62 @@ async function pushWechatTemplate(from, content) {
   }
 }
 
+// 方式3: Server酱 (serverchan.com)
+async function pushServerChan(from, content) {
+  const cfg = config.wechat;
+  if (!cfg?.enabled || !cfg?.serverChanKey) return;
+  try {
+    const res = await httpsPost(
+      `https://sctapi.ftqq.com/${cfg.serverChanKey}.send`,
+      `title=${encodeURIComponent('📨 JackClaw 新消息')}&desp=${encodeURIComponent(`来自: ${from}\n\n内容: ${content}`)}`,
+      { 'Content-Type': 'application/x-www-form-urlencoded' }
+    );
+    log(`[serverchan] ${res.code === 0 || res.errno === 0 ? '✅' : '❌'} ${res.message || ''}`);
+  } catch (e) {
+    log(`[serverchan] ❌ ${e.message}`);
+  }
+}
+
+// 方式4: 微信小程序订阅消息
+async function pushMiniApp(from, content) {
+  const cfg = config.wechat;
+  if (!cfg?.enabled || !cfg?.miniAppId || !cfg?.miniAppSecret || !cfg?.miniTemplateId || !cfg?.miniOpenId) return;
+  try {
+    // Get access token
+    const tokenRes = await httpsPost(
+      `https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid=${cfg.miniAppId}&secret=${cfg.miniAppSecret}`,
+      ''
+    );
+    if (!tokenRes.access_token) { log(`[miniapp] Token failed`); return; }
+    
+    const res = await httpsPost(
+      `https://api.weixin.qq.com/cgi-bin/message/subscribe/send?access_token=${tokenRes.access_token}`,
+      {
+        touser: cfg.miniOpenId,
+        template_id: cfg.miniTemplateId,
+        data: {
+          thing1: { value: from },
+          thing2: { value: content.slice(0, 20) },
+          time3: { value: new Date().toLocaleString('zh-CN') },
+        },
+        miniprogram_state: 'formal',
+      }
+    );
+    log(`[miniapp] ${res.errcode === 0 ? '✅' : '❌'} ${res.errmsg || ''}`);
+  } catch (e) {
+    log(`[miniapp] ❌ ${e.message}`);
+  }
+}
+
 async function pushWechat(text, from, content) {
   const cfg = config.wechat;
   if (!cfg?.enabled) return;
-  if (cfg.webhookUrl) {
-    await pushWechatWebhook(text);
-  } else {
-    await pushWechatTemplate(from, content);
-  }
+  const promises = [];
+  if (cfg.webhookUrl) promises.push(pushWechatWebhook(text));
+  if (cfg.appId && cfg.templateId) promises.push(pushWechatTemplate(from, content));
+  if (cfg.serverChanKey) promises.push(pushServerChan(from, content));
+  if (cfg.miniAppId && cfg.miniTemplateId) promises.push(pushMiniApp(from, content));
+  await Promise.allSettled(promises);
 }
 
 // ─── WhatsApp Push (Meta Cloud API) ───
@@ -270,6 +331,26 @@ async function pushWhatsApp(text) {
   }
 }
 
+// ─── Twilio WhatsApp ───
+
+async function pushWhatsAppTwilio(text) {
+  const cfg = config.whatsapp;
+  if (!cfg?.enabled || !cfg?.twilioAccountSid || !cfg?.twilioAuthToken) return;
+  if (!cfg?.twilioFromNumber || !cfg?.twilioToNumber) return;
+  try {
+    const auth = Buffer.from(`${cfg.twilioAccountSid}:${cfg.twilioAuthToken}`).toString('base64');
+    const body = `From=${encodeURIComponent(cfg.twilioFromNumber)}&To=${encodeURIComponent(cfg.twilioToNumber)}&Body=${encodeURIComponent(text)}`;
+    const res = await httpsPost(
+      `https://api.twilio.com/2010-04-01/Accounts/${cfg.twilioAccountSid}/Messages.json`,
+      body,
+      { Authorization: `Basic ${auth}`, 'Content-Type': 'application/x-www-form-urlencoded' }
+    );
+    log(`[whatsapp-twilio] ${res.sid ? '✅' : '❌'} ${res.sid || res.message || ''}`);
+  } catch (e) {
+    log(`[whatsapp-twilio] ❌ ${e.message}`);
+  }
+}
+
 // ─── Unified Push ───
 
 async function pushAll(from, content) {
@@ -281,6 +362,7 @@ async function pushAll(from, content) {
     pushTelegram(htmlText),
     pushWechat(text, from, content),
     pushWhatsApp(text),
+    pushWhatsAppTwilio(text),
   ];
   
   await Promise.allSettled(promises);
@@ -295,6 +377,7 @@ async function pushContactRequest(from, message) {
     pushTelegram(htmlText),
     pushWechat(text, from, message),
     pushWhatsApp(text),
+    pushWhatsAppTwilio(text),
   ]);
 }
 

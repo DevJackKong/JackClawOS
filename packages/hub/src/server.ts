@@ -231,8 +231,9 @@ export function createServer(): Application {
   // SECURITY: NO chat routes in public zone. All chat goes through JWT.
   // WebSocket upgrade is handled by attachChatWss() on the HTTP server, not Express.
 
-  // Public: Human accounts — humanToken auth (no JWT needed)
-  app.use('/api/humans', humansRoute)
+  // Public: Human message endpoint only (humanToken auth, no JWT)
+  // /register and GET / moved behind JWT (defense in depth)
+  app.post('/api/humans/message', humansRoute)
 
   // Public: receipt delivery/read status (nodes authenticate via nodeId in body)
   app.use('/api/receipt', receiptRoute)
@@ -255,6 +256,10 @@ export function createServer(): Application {
   app.post('/api/chat/send', rateLimiter.message, chatRouter)
   app.use('/api/chat', chatRouter)
   app.use('/api/chat', traceRoute)            // message trace & status
+
+  // SECURITY FIX: Human account management behind JWT (register + list)
+  // /humans/message stays public (humanToken auth)
+  app.use('/api/humans', humansRoute)
 
   // Tenant context: extract tenantId/orgId from JWT or headers for multi-tenant routes
   app.use('/api/tenants', tenantContextMiddleware({ requireTenant: false }), tenantRouter)

@@ -137,6 +137,40 @@ export function asyncHandler(
   }
 }
 
+// ─── JWT Signing & Verification (RS256 primary, HS256 legacy fallback) ────────
+
+/**
+ * Sign a JWT using RS256 with the Hub's RSA private key.
+ * All new tokens should be issued via this function.
+ */
+export function signJWT(payload: object, expiresIn: string | number = '30d'): string {
+  const { privateKey } = getHubKeys()
+  return jwt.sign(payload, privateKey, { algorithm: 'RS256', expiresIn } as jwt.SignOptions)
+}
+
+/**
+ * Verify a JWT. Tries RS256 (Hub public key) first, then falls back to
+ * HS256 legacy secrets for tokens issued before the RS256 migration.
+ * Returns the decoded payload or null if invalid.
+ */
+export function verifyJWT(token: string): JWTPayload | null {
+  // 1. Try RS256 with Hub public key
+  try {
+    const { publicKey } = getHubKeys()
+    return jwt.verify(token, publicKey, { algorithms: ['RS256'] }) as JWTPayload
+  } catch { /* not RS256 — try legacy */ }
+
+  // 2. Try HS256 with rotating keys + static legacy secret
+  const secrets = [...keyRotation.getActiveSecrets(), JWT_SECRET]
+  for (const secret of secrets) {
+    try {
+      return jwt.verify(token, secret, { algorithms: ['HS256'] }) as JWTPayload
+    } catch { /* try next */ }
+  }
+
+  return null
+}
+
 // ─── JWT Auth Middleware ───────────────────────────────────────────────────────
 
 declare global {
@@ -148,8 +182,7 @@ declare global {
 }
 
 /**
- * Verify JWT against all active secrets (current + previous keys in rotation window).
- * Falls back to the legacy JWT_SECRET for tokens issued before key rotation was added.
+ * Verify JWT using RS256 (primary) with HS256 legacy fallback.
  */
 function jwtAuthMiddleware(req: Request, res: Response, next: NextFunction): void {
   const authHeader = req.headers.authorization
@@ -159,18 +192,13 @@ function jwtAuthMiddleware(req: Request, res: Response, next: NextFunction): voi
   }
 
   const token = authHeader.slice(7)
-  // Try all active rotating keys, then fall back to the legacy static secret
-  const secrets = [...keyRotation.getActiveSecrets(), JWT_SECRET]
-
-  for (const secret of secrets) {
-    try {
-      const payload = jwt.verify(token, secret, { algorithms: ['HS256'] }) as JWTPayload
-      req.jwtPayload = payload
-      next()
-      return
-    } catch { /* try next secret */ }
+  const payload = verifyJWT(token)
+  if (!payload) {
+    res.status(401).json({ error: 'Invalid or expired token' })
+    return
   }
-  res.status(401).json({ error: 'Invalid or expired token' })
+  req.jwtPayload = payload
+  next()
 }
 
 // ─── Server Factory ───────────────────────────────────────────────────────────

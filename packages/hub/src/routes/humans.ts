@@ -14,7 +14,7 @@
 import { Router, Request, Response } from 'express'
 import { randomUUID } from 'crypto'
 import jwt from 'jsonwebtoken'
-import { JWT_SECRET } from '../server'
+import { verifyJWT } from '../server'
 import {
   registerHuman,
   listHumans,
@@ -39,7 +39,7 @@ function requireJwt(req: Request, res: Response): { nodeId?: string; role?: stri
     return null
   }
   try {
-    const payload = jwt.verify(authHeader.slice(7), JWT_SECRET, { algorithms: ['HS256'] }) as any
+    const payload = verifyJWT(authHeader.slice(7)) as any
     return payload
   } catch {
     res.status(401).json({ error: 'Invalid or expired token' })

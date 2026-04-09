@@ -9,7 +9,7 @@
 import { Router, Request, Response } from 'express'
 import os from 'os'
 import jwt from 'jsonwebtoken'
-import { JWT_SECRET } from '../server'
+import { verifyJWT } from '../server'
 import { chatWorker } from '../chat-worker'
 import { offlineQueue } from '../store/offline-queue'
 import { messageStore } from '../store/message-store'
@@ -24,7 +24,7 @@ function requireAuth(req: Request, res: Response): boolean {
     return false
   }
   try {
-    jwt.verify(authHeader.slice(7), JWT_SECRET, { algorithms: ['HS256'] })
+    verifyJWT(authHeader.slice(7))
     return true
   } catch {
     res.status(401).json({ error: 'Invalid or expired token' })

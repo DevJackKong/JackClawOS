@@ -13,7 +13,7 @@
 import { Router, Request, Response } from 'express'
 import type { FederationHandshake, FederatedMessage } from '@jackclaw/protocol'
 import { getFederationManager } from '../federation'
-import { getHubKeys, JWT_SECRET } from '../server'
+import { getHubKeys, verifyJWT } from '../server'
 import jwt from 'jsonwebtoken'
 
 const router = Router()
@@ -165,7 +165,11 @@ function requireAdmin(req: Request, res: Response): boolean {
 
   try {
     const token = authHeader.slice(7)
-    const payload = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] }) as { role?: string; nodeId?: string }
+    const payload = verifyJWT(token) as { role?: string; nodeId?: string } | null
+    if (!payload) {
+      res.status(401).json({ error: 'Invalid or expired token' })
+      return false
+    }
     ;(req as any).jwtPayload = payload
 
     const role = payload.role?.toLowerCase()

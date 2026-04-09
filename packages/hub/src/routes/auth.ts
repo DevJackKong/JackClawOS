@@ -19,7 +19,7 @@ import jwt from 'jsonwebtoken'
 import { userStore } from '../store/users'
 import { directoryStore } from '../store/directory'
 import { presenceManager } from '../presence'
-import { JWT_SECRET } from '../server'
+import { signJWT } from '../server'
 
 const router = Router()
 
@@ -116,10 +116,9 @@ function isPublicRegisterHandle(handle: string): boolean {
 }
 
 function issueUserToken(handle: string, displayName: string): string {
-  return jwt.sign(
+  return signJWT(
     { handle, displayName, role: 'user' },
-    JWT_SECRET,
-    { expiresIn: '30d' },
+    '30d',
   )
 }
 

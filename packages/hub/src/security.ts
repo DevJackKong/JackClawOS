@@ -48,7 +48,7 @@ export const rateLimiter = {
   /** Global: 1000 req/min per IP+nodeId */
   global: rateLimit({
     windowMs: 60_000,
-    max: IS_TEST ? 100_000 : 1000,
+    max: IS_TEST ? 10_000 : 1000,
     standardHeaders: true,
     legacyHeaders: false,
     keyGenerator: makeKeyGenerator('global'),
@@ -58,7 +58,7 @@ export const rateLimiter = {
   /** Login: 10 attempts/min per IP+nodeId — brute-force protection */
   login: rateLimit({
     windowMs: 60_000,
-    max: IS_TEST ? 100_000 : 10,
+    max: IS_TEST ? 100 : 10,
     standardHeaders: true,
     legacyHeaders: false,
     keyGenerator: makeKeyGenerator('login'),
@@ -69,7 +69,7 @@ export const rateLimiter = {
   /** Register: 10 attempts/hour per IP — prevent account flooding */
   register: rateLimit({
     windowMs: 60 * 60_000,
-    max: IS_TEST ? 100_000 : 10,
+    max: IS_TEST ? 100 : 10,
     standardHeaders: true,
     legacyHeaders: false,
     keyGenerator: makeKeyGenerator('register'),
@@ -79,7 +79,7 @@ export const rateLimiter = {
   /** Message send: 60/min per IP+nodeId */
   message: rateLimit({
     windowMs: 60_000,
-    max: IS_TEST ? 100_000 : 60,
+    max: IS_TEST ? 600 : 60,
     standardHeaders: true,
     legacyHeaders: false,
     keyGenerator: makeKeyGenerator('message'),
@@ -89,7 +89,7 @@ export const rateLimiter = {
   /** File upload: 10/min per IP+nodeId */
   upload: rateLimit({
     windowMs: 60_000,
-    max: IS_TEST ? 100_000 : 10,
+    max: IS_TEST ? 100 : 10,
     standardHeaders: true,
     legacyHeaders: false,
     keyGenerator: makeKeyGenerator('upload'),
@@ -160,7 +160,7 @@ export function cspHeaders(): RequestHandler {
 
   const policy = [
     `default-src 'self'`,
-    `script-src 'self' 'unsafe-inline'`,
+    `script-src 'self'`,
     `style-src 'self' 'unsafe-inline'`,
     `img-src 'self' data: blob:`,
     `connect-src 'self' ${wsOrigins} ws://localhost:* wss://localhost:*`,

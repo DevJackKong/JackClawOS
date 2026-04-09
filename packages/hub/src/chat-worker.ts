@@ -375,11 +375,11 @@ export class ChatWorker {
         try {
           // Lazy imports to avoid load-time circular deps
           // eslint-disable-next-line @typescript-eslint/no-var-requires
-          const { JWT_SECRET } = require('./server') as typeof import('./server')
+          const { verifyJWT } = require('./server') as typeof import('./server')
           // eslint-disable-next-line @typescript-eslint/no-var-requires
           const { userStore } = require('./store/users') as typeof import('./store/users')
-          const payload = jwt.verify(tokenParam, JWT_SECRET) as { handle?: string }
-          if (payload.handle) {
+          const payload = verifyJWT(tokenParam) as { handle?: string } | null
+          if (payload?.handle) {
             const user = userStore.getUser(payload.handle)
             if (user?.agentNodeId) nodeId = user.agentNodeId
           }

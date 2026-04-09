@@ -10,7 +10,6 @@ exports.userStore = exports.UserStore = void 0;
 const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
 const crypto_1 = __importDefault(require("crypto"));
-const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const server_1 = require("../server");
 // ─── Paths ────────────────────────────────────────────────────────────────────
 const HUB_DIR = path_1.default.join(process.env.HOME ?? '~', '.jackclaw', 'hub');
@@ -164,8 +163,8 @@ class UserStore {
     // ─── Token ─────────────────────────────────────────────────────────────────
     validateToken(token) {
         try {
-            const payload = jsonwebtoken_1.default.verify(token, server_1.JWT_SECRET, { algorithms: ['HS256'] });
-            if (payload.role !== 'user' || !payload.handle)
+            const payload = (0, server_1.verifyJWT)(token);
+            if (!payload || payload.role !== 'user' || !payload.handle)
                 return null;
             return this.getUser(payload.handle);
         }
@@ -196,7 +195,7 @@ class UserStore {
         return pub;
     }
     issueToken(user) {
-        return jsonwebtoken_1.default.sign({ handle: user.handle, displayName: user.displayName, role: 'user' }, server_1.JWT_SECRET, { expiresIn: '30d' });
+        return (0, server_1.signJWT)({ handle: user.handle, displayName: user.displayName, role: 'user' }, '30d');
     }
     /** Write an AgentProfile entry into directory.json for this user */
     registerAgentIdentity(user) {

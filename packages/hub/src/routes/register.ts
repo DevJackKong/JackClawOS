@@ -7,7 +7,7 @@ import jwt from 'jsonwebtoken'
 import crypto from 'crypto'
 import { URL } from 'url'
 import { registerNode, nodeExists } from '../store/nodes'
-import { getHubKeys, JWT_SECRET } from '../server'
+import { getHubKeys, signJWT } from '../server'
 
 const router = Router()
 
@@ -111,10 +111,9 @@ router.post('/', (req: Request, res: Response): void => {
 
     const node = registerNode({ nodeId, name, role, publicKey, callbackUrl: sanitizedCallbackUrl })
 
-    const token = jwt.sign(
+    const token = signJWT(
       { nodeId: node.nodeId, role: node.role },
-      JWT_SECRET,
-      { expiresIn: '30d' }
+      '30d'
     )
 
     const { publicKey: hubPublicKey } = getHubKeys()

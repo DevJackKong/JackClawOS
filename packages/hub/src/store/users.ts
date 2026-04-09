@@ -7,7 +7,7 @@ import path from 'path'
 import crypto from 'crypto'
 import jwt from 'jsonwebtoken'
 import { AgentProfile } from '@jackclaw/protocol'
-import { JWT_SECRET } from '../server'
+import { signJWT, verifyJWT } from '../server'
 
 // ─── Paths ────────────────────────────────────────────────────────────────────
 
@@ -209,8 +209,8 @@ export class UserStore {
 
   validateToken(token: string): PublicUser | null {
     try {
-      const payload = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] }) as { handle?: string; role?: string }
-      if (payload.role !== 'user' || !payload.handle) return null
+      const payload = verifyJWT(token) as { handle?: string; role?: string } | null
+      if (!payload || payload.role !== 'user' || !payload.handle) return null
       return this.getUser(payload.handle)
     } catch {
       return null
@@ -245,10 +245,9 @@ export class UserStore {
   }
 
   private issueToken(user: UserRecord): string {
-    return jwt.sign(
+    return signJWT(
       { handle: user.handle, displayName: user.displayName, role: 'user' },
-      JWT_SECRET,
-      { expiresIn: '30d' },
+      '30d',
     )
   }
 

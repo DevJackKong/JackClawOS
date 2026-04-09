@@ -20,7 +20,6 @@ exports.getMessageStatus = getMessageStatus;
 const fs_1 = __importDefault(require("fs"));
 const os_1 = __importDefault(require("os"));
 const path_1 = __importDefault(require("path"));
-const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const ws_1 = require("ws");
 const chat_1 = require("./store/chat");
 const human_registry_1 = require("./store/human-registry");
@@ -319,11 +318,11 @@ class ChatWorker {
                 try {
                     // Lazy imports to avoid load-time circular deps
                     // eslint-disable-next-line @typescript-eslint/no-var-requires
-                    const { JWT_SECRET } = require('./server');
+                    const { verifyJWT } = require('./server');
                     // eslint-disable-next-line @typescript-eslint/no-var-requires
                     const { userStore } = require('./store/users');
-                    const payload = jsonwebtoken_1.default.verify(tokenParam, JWT_SECRET);
-                    if (payload.handle) {
+                    const payload = verifyJWT(tokenParam);
+                    if (payload?.handle) {
                         const user = userStore.getUser(payload.handle);
                         if (user?.agentNodeId)
                             nodeId = user.agentNodeId;

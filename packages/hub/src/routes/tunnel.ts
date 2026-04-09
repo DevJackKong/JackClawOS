@@ -15,7 +15,7 @@ import { WebSocketServer, WebSocket } from 'ws'
 import http from 'http'
 import crypto from 'crypto'
 import jwt from 'jsonwebtoken'
-import { JWT_SECRET } from '../server'
+import { verifyJWT } from '../server'
 import { nodeExists } from '../store/nodes'
 
 const router = Router()
@@ -24,7 +24,7 @@ const router = Router()
 function verifyTunnelJwt(authHeader: string | undefined): { nodeId: string; role: string } | null {
   if (!authHeader?.startsWith('Bearer ')) return null
   try {
-    return jwt.verify(authHeader.slice(7), JWT_SECRET, { algorithms: ['HS256'] }) as any
+    return verifyJWT(authHeader.slice(7)) as any
   } catch {
     return null
   }
@@ -91,7 +91,7 @@ export function attachTunnelWss(server: http.Server, hubUrl: string): void {
       return
     }
     try {
-      jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] })
+      verifyJWT(token)
     } catch {
       socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n')
       socket.destroy()

@@ -19,7 +19,6 @@ exports.getConnectedTunnels = getConnectedTunnels;
 const express_1 = require("express");
 const ws_1 = require("ws");
 const crypto_1 = __importDefault(require("crypto"));
-const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const server_1 = require("../server");
 const router = (0, express_1.Router)();
 // ─── JWT verification helper for tunnel routes ───────────────────────────────
@@ -27,7 +26,7 @@ function verifyTunnelJwt(authHeader) {
     if (!authHeader?.startsWith('Bearer '))
         return null;
     try {
-        return jsonwebtoken_1.default.verify(authHeader.slice(7), server_1.JWT_SECRET, { algorithms: ['HS256'] });
+        return (0, server_1.verifyJWT)(authHeader.slice(7));
     }
     catch {
         return null;
@@ -58,7 +57,7 @@ function attachTunnelWss(server, hubUrl) {
             return;
         }
         try {
-            jsonwebtoken_1.default.verify(token, server_1.JWT_SECRET, { algorithms: ['HS256'] });
+            (0, server_1.verifyJWT)(token);
         }
         catch {
             socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');

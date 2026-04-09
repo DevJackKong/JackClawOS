@@ -7,7 +7,6 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
-const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const crypto_1 = __importDefault(require("crypto"));
 const url_1 = require("url");
 const nodes_1 = require("../store/nodes");
@@ -100,7 +99,7 @@ router.post('/', (req, res) => {
             return;
         }
         const node = (0, nodes_1.registerNode)({ nodeId, name, role, publicKey, callbackUrl: sanitizedCallbackUrl });
-        const token = jsonwebtoken_1.default.sign({ nodeId: node.nodeId, role: node.role }, server_1.JWT_SECRET, { expiresIn: '30d' });
+        const token = (0, server_1.signJWT)({ nodeId: node.nodeId, role: node.role }, '30d');
         const { publicKey: hubPublicKey } = (0, server_1.getHubKeys)();
         res.status(existing ? 200 : 201).json({
             success: true,

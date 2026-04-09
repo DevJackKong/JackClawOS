@@ -19,7 +19,6 @@ const express_1 = require("express");
 const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
 const crypto_1 = __importDefault(require("crypto"));
-const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const users_1 = require("../store/users");
 const directory_1 = require("../store/directory");
 const presence_1 = require("../presence");
@@ -89,7 +88,7 @@ function isPublicRegisterHandle(handle) {
         && /^@[a-z0-9][a-z0-9_-]{0,47}\.[a-z0-9][a-z0-9_-]{0,47}$/.test(trimmed);
 }
 function issueUserToken(handle, displayName) {
-    return jsonwebtoken_1.default.sign({ handle, displayName, role: 'user' }, server_1.JWT_SECRET, { expiresIn: '30d' });
+    return (0, server_1.signJWT)({ handle, displayName, role: 'user' }, '30d');
 }
 // ─── Public: no JWT required ──────────────────────────────────────────────────
 // POST /api/auth/register

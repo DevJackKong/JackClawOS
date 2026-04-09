@@ -11,13 +11,9 @@
  *     → 是：转给对应 agentNodeId → Agent 处理/转发 → 推送到目标 human webhookUrl
  *     → 否：按普通 agentNodeId 路由（WebSocket / 离线队列）
  */
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const crypto_1 = require("crypto");
-const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const server_1 = require("../server");
 const human_registry_1 = require("../store/human-registry");
 const chat_1 = require("../store/chat");
@@ -32,7 +28,7 @@ function requireJwt(req, res) {
         return null;
     }
     try {
-        const payload = jsonwebtoken_1.default.verify(authHeader.slice(7), server_1.JWT_SECRET, { algorithms: ['HS256'] });
+        const payload = (0, server_1.verifyJWT)(authHeader.slice(7));
         return payload;
     }
     catch {

@@ -14,6 +14,8 @@ COPY packages/watchdog/package.json   packages/watchdog/
 COPY packages/hub/package.json        packages/hub/
 
 # Install all workspace deps (fresh, no lockfile)
+# --ignore-scripts prevents malicious postinstall scripts from running.
+# If a dependency needs native compilation, add an explicit RUN npm rebuild <pkg> below.
 RUN npm install --ignore-scripts
 
 # Copy source for hub and its local dependencies

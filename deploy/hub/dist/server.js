@@ -41,6 +41,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.JWT_SECRET = void 0;
 exports.getHubKeys = getHubKeys;
 exports.asyncHandler = asyncHandler;
+exports.signJWT = signJWT;
+exports.verifyJWT = verifyJWT;
 exports.createServer = createServer;
 const express_1 = __importDefault(require("express"));
 const morgan_1 = __importDefault(require("morgan"));
@@ -154,9 +156,39 @@ function asyncHandler(fn) {
         fn(req, res, next).catch(next);
     };
 }
+// ─── JWT Signing & Verification (RS256 primary, HS256 legacy fallback) ────────
 /**
- * Verify JWT against all active secrets (current + previous keys in rotation window).
- * Falls back to the legacy JWT_SECRET for tokens issued before key rotation was added.
+ * Sign a JWT using RS256 with the Hub's RSA private key.
+ * All new tokens should be issued via this function.
+ */
+function signJWT(payload, expiresIn = '30d') {
+    const { privateKey } = getHubKeys();
+    return jsonwebtoken_1.default.sign(payload, privateKey, { algorithm: 'RS256', expiresIn });
+}
+/**
+ * Verify a JWT. Tries RS256 (Hub public key) first, then falls back to
+ * HS256 legacy secrets for tokens issued before the RS256 migration.
+ * Returns the decoded payload or null if invalid.
+ */
+function verifyJWT(token) {
+    // 1. Try RS256 with Hub public key
+    try {
+        const { publicKey } = getHubKeys();
+        return jsonwebtoken_1.default.verify(token, publicKey, { algorithms: ['RS256'] });
+    }
+    catch { /* not RS256 — try legacy */ }
+    // 2. Try HS256 with rotating keys + static legacy secret
+    const secrets = [...security_1.keyRotation.getActiveSecrets(), exports.JWT_SECRET];
+    for (const secret of secrets) {
+        try {
+            return jsonwebtoken_1.default.verify(token, secret, { algorithms: ['HS256'] });
+        }
+        catch { /* try next */ }
+    }
+    return null;
+}
+/**
+ * Verify JWT using RS256 (primary) with HS256 legacy fallback.
  */
 function jwtAuthMiddleware(req, res, next) {
     const authHeader = req.headers.authorization;
@@ -165,18 +197,13 @@ function jwtAuthMiddleware(req, res, next) {
         return;
     }
     const token = authHeader.slice(7);
-    // Try all active rotating keys, then fall back to the legacy static secret
-    const secrets = [...security_1.keyRotation.getActiveSecrets(), exports.JWT_SECRET];
-    for (const secret of secrets) {
-        try {
-            const payload = jsonwebtoken_1.default.verify(token, secret, { algorithms: ['HS256'] });
-            req.jwtPayload = payload;
-            next();
-            return;
-        }
-        catch { /* try next secret */ }
+    const payload = verifyJWT(token);
+    if (!payload) {
+        res.status(401).json({ error: 'Invalid or expired token' });
+        return;
     }
-    res.status(401).json({ error: 'Invalid or expired token' });
+    req.jwtPayload = payload;
+    next();
 }
 // ─── Server Factory ───────────────────────────────────────────────────────────
 function createServer() {

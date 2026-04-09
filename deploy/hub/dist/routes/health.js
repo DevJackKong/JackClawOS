@@ -13,7 +13,6 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.protectedHealthRouter = exports.publicHealthRouter = void 0;
 const express_1 = require("express");
 const os_1 = __importDefault(require("os"));
-const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const server_1 = require("../server");
 const chat_worker_1 = require("../chat-worker");
 const offline_queue_1 = require("../store/offline-queue");
@@ -27,7 +26,7 @@ function requireAuth(req, res) {
         return false;
     }
     try {
-        jsonwebtoken_1.default.verify(authHeader.slice(7), server_1.JWT_SECRET, { algorithms: ['HS256'] });
+        (0, server_1.verifyJWT)(authHeader.slice(7));
         return true;
     }
     catch {

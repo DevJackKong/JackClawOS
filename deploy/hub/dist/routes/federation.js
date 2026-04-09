@@ -10,14 +10,10 @@
 // POST /api/federation/blacklist       — Add hub to blacklist (admin)
 // DELETE /api/federation/blacklist/:hubUrl — Remove from blacklist (admin)
 // GET  /api/federation/blacklist       — List blacklisted hubs (admin)
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const federation_1 = require("../federation");
 const server_1 = require("../server");
-const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const router = (0, express_1.Router)();
 // ─── POST /handshake ──────────────────────────────────────────────────────────
 router.post('/handshake', (req, res) => {
@@ -139,7 +135,12 @@ function requireAdmin(req, res) {
     }
     try {
         const token = authHeader.slice(7);
-        const payload = jsonwebtoken_1.default.verify(token, server_1.JWT_SECRET, { algorithms: ['HS256'] });
+        const payload = (0, server_1.verifyJWT)(token);
+        if (!payload) {
+            res.status(401).json({ error: 'Invalid or expired token' });
+            return false;
+        }
+        ;
         req.jwtPayload = payload;
         const role = payload.role?.toLowerCase();
         if (role !== 'admin' && role !== 'ceo' && role !== 'owner') {

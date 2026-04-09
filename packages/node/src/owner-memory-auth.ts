@@ -260,6 +260,8 @@ export class OwnerMemoryAuth {
     })
     // 只保留最近 1000 条
     if (this.auditLogs.length > 1000) this.auditLogs.splice(0, this.auditLogs.length - 1000)
+    // Persist immediately so audit logs survive crashes
+    this.save()
   }
 
   private load(): void {

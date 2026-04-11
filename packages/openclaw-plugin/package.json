@@ -11,7 +11,7 @@
     "prepublishOnly": "npm run build"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=20.0.0"
   },
   "dependencies": {
     "@jackclaw/protocol": "^0.3.0",

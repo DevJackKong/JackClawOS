@@ -2,6 +2,7 @@
 
 // ── 新4分类记忆体系 ──────────────────────────────────────────
 export { MemoryManager } from './manager.js'
+export * from './layers/index.js'
 export type {
   MemDir,
   MemoryType,

@@ -116,8 +116,11 @@ function isPublicRegisterHandle(handle: string): boolean {
 }
 
 function issueUserToken(handle: string, displayName: string): string {
+  // First registered user automatically gets CEO role
+  const { total } = userStore.listUsers(1, 1)
+  const role = total <= 1 ? 'ceo' : 'user'
   return signJWT(
-    { handle, displayName, role: 'user' },
+    { handle, displayName, role },
     '30d',
   )
 }

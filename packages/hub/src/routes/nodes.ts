@@ -14,8 +14,8 @@ const router = Router()
 router.get('/', (req: Request, res: Response): void => {
   // CEO-only check (role set on JWT by auth middleware)
   const { role } = (req as Request & { jwtPayload?: { nodeId: string; role: string } }).jwtPayload ?? {}
-  if (role !== 'ceo') {
-    res.status(403).json({ error: 'Access denied. CEO role required.', code: 'FORBIDDEN' })
+  if (role !== 'ceo' && role !== 'admin' && role !== 'owner') {
+    res.status(403).json({ error: 'Access denied. CEO/admin role required.', code: 'FORBIDDEN' })
     return
   }
 

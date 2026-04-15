@@ -265,3 +265,11 @@ export async function main() {
 
 export { AutoReplyHandler } from './auto-reply.js'
 export type { AutoReplyOptions } from './auto-reply.js'
+
+// Auto-start when run directly (not imported as a library)
+if (require.main === module) {
+  main().catch(err => {
+    console.error('[node] Fatal:', err)
+    process.exit(1)
+  })
+}

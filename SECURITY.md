@@ -128,4 +128,15 @@ The following are in scope for security reports:
 
 ---
 
+## Self-hosted Hub checklist
+
+Short reminders for operators running the Hub beyond the defaults in `packages/hub/src/security.ts`:
+
+- Set **`JWT_SECRET`** explicitly in production instead of relying only on auto-generated files on disk.
+- Avoid **`CORS_ORIGINS=*`** on internet-facing deployments unless you understand the trade-off for browser clients and credentials.
+- Prefer TLS in front of the Hub; do not expose raw Hub ports to untrusted networks without review.
+- Run **`npm audit`** after dependency upgrades and triage critical findings.
+
+---
+
 *Last updated: April 4, 2026*
